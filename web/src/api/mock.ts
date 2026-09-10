@@ -1,6 +1,12 @@
 // Демо-режим: работает без Google, D1 и OpenAI, чтобы интерфейс можно было
 // открыть и посмотреть.
 //
+// ВСЕ КОМПАНИИ И ЛЮДИ ЗДЕСЬ ВЫМЫШЛЕНЫ, и это требование, а не стилистика:
+// демо публикуется на GitHub Pages, то есть публично, а сигнал вроде «раунд
+// Series C» или «пожар на заводе» — это утверждение о факте. Про реальную
+// компанию такое утверждение было бы опубликованной неправдой, поэтому в
+// демо-данных не должно появляться ни одного существующего названия.
+//
 // Важное свойство: подделаны ТОЛЬКО модель и база. Аудит профиля, совпадение,
 // блокеры и проверки документов считает настоящее ядро @huntback/core — то же,
 // что в воркере. Поэтому демо не врёт: если снять блокер языка, он снимется по
@@ -32,7 +38,7 @@ Baltic Logistics, Рига — Operations Manager, 2017 — 2021
 Команда 8 человек. Запустила две новые площадки, вышли на плановый объём
 за 5 месяцев вместо 9. Снизила долю просроченных отгрузок с 12% до 3%.
 
-Kesko, Хельсинки — Supply Chain Analyst, 2014 — 2017
+Rautala Group, Хельсинки — Supply Chain Analyst, 2014 — 2017
 Аналитика S&OP. Построила модель прогноза спроса, точность выросла на 18%.
 
 Образование: MSc Industrial Engineering, KTH, 2014.`;
@@ -62,7 +68,7 @@ let profile: Profile = {
   roles: [
     { company: 'Nordic Freight Group', role_title: 'Head of Operations', from: '2021-02-01', to: null },
     { company: 'Baltic Logistics', role_title: 'Operations Manager', from: '2017-01-01', to: '2021-01-01' },
-    { company: 'Kesko', role_title: 'Supply Chain Analyst', from: '2014-06-01', to: '2017-01-01' },
+    { company: 'Rautala Group', role_title: 'Supply Chain Analyst', from: '2014-06-01', to: '2017-01-01' },
   ],
 };
 
@@ -95,37 +101,37 @@ const opp = (o: Partial<Opportunity> & { id: string; company: string; role_title
 
 let opportunities: Opportunity[] = [
   opp({
-    id: 'o1', company: 'Instabox', role_title: 'VP Operations', industry: 'логистика последней мили',
+    id: 'o1', company: 'Nordpakk', role_title: 'VP Operations', industry: 'логистика последней мили',
     city: 'Стокгольм', country: 'Sweden', size: '900+', kind: 'vacancy', status: 'analysed', score: 78,
-    source_url: 'https://example.com/jobs/instabox-vp-ops',
+    source_url: 'https://example.com/jobs/nordpakk-vp-ops',
     jd_text: 'We are looking for a VP Operations to lead our Nordic operations...',
     signal: 'Расширение в Данию, объявлено в июне 2026',
   }),
   opp({
-    id: 'o2', company: 'Zalando Logistics SE', role_title: 'Director of Fulfilment', industry: 'e-commerce',
+    id: 'o2', company: 'Kleiderwerk Logistik SE', role_title: 'Director of Fulfilment', industry: 'e-commerce',
     city: 'Берлин', country: 'Germany', size: '5000+', kind: 'vacancy', status: 'analysed', score: 64,
-    source_url: 'https://example.com/jobs/zalando-dir-fulfilment',
+    source_url: 'https://example.com/jobs/kleiderwerk-dir-fulfilment',
     jd_text: 'Fließend Deutsch erforderlich. Verantwortung für ein Team von 60 Mitarbeitenden...',
     signal: 'Новый распределительный центр под Лейпцигом, август 2026',
   }),
   opp({
-    id: 'o3', company: 'Polarbröd', role_title: 'Head of Supply Chain', industry: 'производство продуктов',
+    id: 'o3', company: 'Norrbröd', role_title: 'Head of Supply Chain', industry: 'производство продуктов',
     city: 'Умео', country: 'Sweden', size: '400', kind: 'hypothesis', status: 'new',
-    source_url: 'https://example.com/news/polarbrod-expansion',
+    source_url: 'https://example.com/news/norrbrod-expansion',
     source_date: '2026-07-14',
     signal: 'Запуск второй линии после пожара на основном заводе, июль 2026 — операционка обычно не успевает за производством',
   }),
   opp({
-    id: 'o4', company: 'Budbee', role_title: 'Head of Network Operations', industry: 'доставка',
+    id: 'o4', company: 'Snabbud', role_title: 'Head of Network Operations', industry: 'доставка',
     city: 'Стокгольм', country: 'Sweden', size: '600', kind: 'hypothesis', status: 'new',
-    source_url: 'https://example.com/news/budbee-series-c',
+    source_url: 'https://example.com/news/snabbud-series-c',
     source_date: '2026-05-22',
     signal: 'Раунд Series C в мае 2026, заявлен выход на три новых рынка',
   }),
   opp({
-    id: 'o5', company: 'Oda', role_title: 'VP Supply Chain', industry: 'онлайн-продукты',
+    id: 'o5', company: 'Matkassen', role_title: 'VP Supply Chain', industry: 'онлайн-продукты',
     city: 'Осло', country: 'Norway', size: '1200', kind: 'vacancy', status: 'new',
-    source_url: 'https://example.com/jobs/oda-vp-sc',
+    source_url: 'https://example.com/jobs/matkassen-vp-sc',
     signal: 'Реорганизация цепочки поставок после смены CEO, апрель 2026',
   }),
 ];
@@ -278,7 +284,7 @@ export const mockApi: Api = {
     }
     const text = input.text ?? 'Head of Logistics, Stockholm. We are looking for an experienced operations leader...';
     const parsed: ParsedJob = {
-      company: 'Apotea', role_title: 'Head of Logistics', city: 'Стокгольм', country: 'Sweden',
+      company: 'Apotekly', role_title: 'Head of Logistics', city: 'Стокгольм', country: 'Sweden',
       industry: 'e-commerce', size: '1000+', language: 'sv', seniority: 'Head',
       requirements: ['Опыт управления складом от 30 человек', 'Шведский на рабочем уровне', 'WMS'],
       responsibilities: ['Складские операции', 'Планирование сети'],
@@ -377,7 +383,7 @@ export const mockApi: Api = {
 
 Про масштаб скажу прямо: в вашей вакансии 40+ человек, у меня было 25. Но эти 25 выросли из восьми под моим управлением, и четверо из них — руководители, то есть я управляю менеджерами, а не только специалистами. Разница между 25 и 40 здесь про темп найма, а не про тип работы.
 
-Почему Instabox и почему сейчас: датский рынок последней мили устроен иначе, чем шведский, и ошибка на старте стоит года. Мне интересно именно это окно, а не роль вообще.
+Почему Nordpakk и почему сейчас: датский рынок последней мили устроен иначе, чем шведский, и ошибка на старте стоит года. Мне интересно именно это окно, а не роль вообще.
 
 Предлагаю разговор на двадцать минут на неделе с 15 сентября.`;
     const doc = { subject: o.kind === 'hypothesis' ? 'Отгрузка после запуска второй линии' : 'Операции в трёх странах — 20 минут?', body };

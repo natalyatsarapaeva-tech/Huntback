@@ -1,0 +1,68 @@
+# Публикация витрины интерфейса на GitHub Pages.
+#
+# Что публикуется: СПА в демо-режиме. Серверной части (Cloudflare Worker, D1,
+# OpenAI, Google OAuth) на Pages нет и быть не может — Pages отдаёт статику.
+# Поэтому сборка идёт с VITE_DEMO_ONLY=1: экран входа не предлагает Google,
+# а ведёт в демо на вымышленных данных. Логика при этом настоящая — аудит,
+# совпадение, блокеры и проверки документов считает то же ядро.
+#
+# Требуется одна настройка в репозитории: Settings → Pages → Source = "GitHub Actions".
+
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Параллельные публикации не нужны: свежий коммит важнее незавершённого прогона.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Тесты ядра и типы — перед публикацией, а не после: витрина не должна
+      # уезжать зелёной, если логика красная.
+      - run: npm test
+      - run: npm run typecheck
+
+      - run: npm run build
+        env:
+          # Проектный сайт Pages живёт в подпути /<repo>/.
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_DEMO_ONLY: '1'
+
+      # Vite не использует папки с подчёркиванием, но .nojekyll снимает любые
+      # сюрпризы от обработки Jekyll'ом.
+      - run: touch web/dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

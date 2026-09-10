@@ -22,6 +22,9 @@ import { Usage } from './screens/Usage.tsx';
 type Tab = 'places' | 'profile' | 'usage';
 const BUSY_TIMEOUT_MS = 180_000;
 
+/** Сборка без серверной части: витрина интерфейса на статическом хостинге. */
+const DEMO_ONLY = import.meta.env.VITE_DEMO_ONLY === '1';
+
 export function App() {
   const [api, setApi] = useState<Api | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -80,7 +83,9 @@ export function App() {
   }, []);
 
   // Реальный вход: если сессии нет, показываем экран входа.
+  // В демо-сборке (GitHub Pages) бэкенда нет вовсе — не спрашиваем.
   useEffect(() => {
+    if (DEMO_ONLY) return;
     let alive = true;
     httpApi.me().then(async m => {
       if (!alive) return;
@@ -103,7 +108,7 @@ export function App() {
     if (api && tab === 'usage') api.usage().then(setUsage).catch(() => {});
   }, [api, tab]);
 
-  if (!api || !me || !profile) return <Login onDemo={openDemo} />;
+  if (!api || !me || !profile) return <Login onDemo={openDemo} demoOnly={DEMO_ONLY} />;
 
   const saveProfile = async (patch: Partial<Profile>) => {
     const r = await api.saveProfile(patch);

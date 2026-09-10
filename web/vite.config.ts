@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
+  // GitHub Pages отдаёт проектный сайт из подпути (/huntback/), и без base
+  // ссылки на /assets/... ведут в корень домена и дают 404. Локально и на
+  // своём домене base остаётся '/'.
+  base: process.env.VITE_BASE || '/',
   plugins: [react()],
   resolve: {
     alias: {
