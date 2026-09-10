@@ -23,17 +23,21 @@ const browser = await chromium.launch({ executablePath: CHROME });
 
 for (const width of WIDTHS) {
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 2 });
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: /демо-данных/i }).click();
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /демо-данных|Открыть демо/i }).click();
   await page.waitForTimeout(1200);
 
+  // Второй карточкой в демо идёт место с жёстким блокером — самый высокий
+  // экран приложения, на нём и проверяем вылеты. Название компании специально
+  // НЕ зашито: демо-данные меняются, а проверка вёрстки от них зависеть не
+  // должна (однажды уже сломалась именно так).
   const screens = [
     ['places', null],
-    ['blocker', 'Zalando Logistics SE'],
+    ['blocker', '.place:nth-of-type(2)'],
   ];
-  for (const [name, click] of screens) {
-    if (click) {
-      await page.getByText(click).click();
+  for (const [name, selector] of screens) {
+    if (selector) {
+      await page.locator(selector).click();
       await page.waitForTimeout(600);
     }
     const r = await page.evaluate(() => {
