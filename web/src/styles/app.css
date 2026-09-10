@@ -48,7 +48,7 @@
 /* ── Глобальный статус-бар (§13.2): единая точка для сообщений ──────────── */
 .statusbar {
   position: sticky; top: var(--header-h); z-index: 30;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: flex-start; gap: 10px;
   padding: 10px 16px; font-size: 13.5px; font-weight: 500;
   border-bottom: 1px solid var(--border);
 }
@@ -56,6 +56,26 @@
 .statusbar--ok     { background: var(--good-bg); color: var(--good); }
 .statusbar--error  { background: var(--danger-bg); color: var(--danger); }
 .statusbar--info   { background: var(--slate-50); color: var(--text-soft); }
+.statusbar-body { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; }
+
+/* Полоса прогона: тонкая, во всю ширину сообщения, с процентом и остатком
+ * справа. Отдельного экрана ожидания нет — статус-бар и есть единая точка
+ * для сообщений (§13.2). */
+.runbar { display: flex; align-items: center; gap: 10px; }
+.runbar-track {
+  flex: 1; height: 5px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.runbar-track > i {
+  display: block; height: 100%; border-radius: 999px; background: currentColor;
+  transition: width .45s ease-out;
+}
+@media (prefers-reduced-motion: reduce) { .runbar-track > i { transition: none; } }
+.runbar-meta {
+  font-size: 12px; font-variant-numeric: tabular-nums; opacity: .75;
+  white-space: nowrap; flex: none;
+}
+
 .statusbar button {
   margin-left: auto; appearance: none; border: 0; background: transparent;
   font: inherit; color: inherit; cursor: pointer; opacity: .65;

@@ -8,8 +8,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
-  Api, Me, Profile, Fact, AuditReport, Opportunity, OpportunityDetail, UsageSummary, ImportResult,
+  Api, Me, Profile, Fact, AuditReport, Opportunity, OpportunityDetail, UsageSummary,
+  ImportResult, RunEvent,
 } from './api/types.ts';
+import { runProgress } from '@huntback/core';
 import { httpApi, ApiFailure } from './api/client.ts';
 import { mockApi } from './api/mock.ts';
 import { StatusBar, type Status } from './components/ui.tsx';
@@ -48,10 +50,14 @@ export function App() {
     if (status.kind !== 'busy') { setElapsed(0); return; }
     const started = Date.now();
     const tick = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    const bail = setTimeout(() => setStatus({
-      kind: 'error',
-      text: 'Операция не ответила за три минуты. Кнопки разблокированы — попробуйте ещё раз.',
-    }), BUSY_TIMEOUT_MS);
+    // Страховка §16: любое busy снимается по таймауту, чтобы кнопки не
+    // остались заблокированными навсегда. Прогон поиска идёт дольше и ведёт
+    // свою полосу, поэтому его этот таймер не трогает.
+    const bail = setTimeout(() => setStatus(cur => (
+      cur.kind === 'busy' && !cur.progress
+        ? { kind: 'error', text: 'Операция не ответила за три минуты. Кнопки разблокированы — попробуйте ещё раз.' }
+        : cur
+    )), BUSY_TIMEOUT_MS);
     return () => { clearInterval(tick); clearTimeout(bail); };
   }, [status]);
 
@@ -142,24 +148,55 @@ export function App() {
     );
   }
 
+  /**
+   * Поиск по кнопке. Очередей нет: один запрос идёт минуты и присылает события,
+   * из которых ядро считает проценты и остаток. Полоса двигается от реальных
+   * событий (завершённых направлений), а таймер лишь не даёт ей замереть между
+   * ними — поэтому она не обманывает.
+   */
   const startRun = async () => {
-    const started = await run('Запускаю поиск', () => api.startRun());
-    if (!started) return;
-    setStatus({ kind: 'busy', text: 'Формирую поисковые запросы' });
-    const poll = setInterval(async () => {
-      const s = await api.getRun(started.run_id).catch(() => null);
-      if (!s) return;
-      if (s.state === 'done') {
-        clearInterval(poll);
-        setStatus({ kind: 'ok', text: `Найдено ${s.found}, добавлено новых ${s.added}` });
-        await refreshList(api);
-      } else if (s.state === 'failed') {
-        clearInterval(poll);
-        setStatus({ kind: 'error', text: s.error ?? 'Прогон не удался. Кнопки разблокированы.' });
-      } else if (s.stage) {
-        setStatus({ kind: 'busy', text: s.stage });
-      }
-    }, 600);
+    const started = Date.now();
+    let last: RunEvent = { stage: 'plan' };
+    setStatus({
+      kind: 'busy', text: 'Формирую поисковые запросы',
+      progress: runProgress({ stage: 'plan', elapsedSec: 0 }),
+    });
+
+    // Тик нужен только чтобы остаток и ползунок обновлялись между событиями:
+    // между двумя направлениями может пройти минута.
+    const tick = setInterval(() => {
+      if (last.stage === 'done') return;
+      setStatus({
+        kind: 'busy', text: '',
+        progress: runProgress({ ...last, elapsedSec: Math.round((Date.now() - started) / 1000) }),
+      });
+    }, 1000);
+
+    try {
+      await api.runSearch(e => {
+        last = e;
+        const elapsedSec = Math.round((Date.now() - started) / 1000);
+        if (e.stage === 'done') {
+          clearInterval(tick);
+          if (e.error) { setStatus({ kind: 'error', text: e.error }); return; }
+          setStatus({
+            kind: 'ok',
+            text: e.added
+              ? `Найдено ${e.found}, добавлено новых ${e.added}`
+              : `Найдено ${e.found}, новых среди них нет`,
+          });
+          void refreshList(api);
+          return;
+        }
+        setStatus({ kind: 'busy', text: '', progress: runProgress({ ...e, elapsedSec }) });
+      });
+      await refreshList(api);
+    } catch (e) {
+      const msg = e instanceof ApiFailure || e instanceof Error ? e.message : 'Поиск не удался';
+      setStatus({ kind: 'error', text: msg });
+    } finally {
+      clearInterval(tick);
+    }
   };
 
   return (

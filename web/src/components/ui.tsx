@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { scoreBand, type CheckResult } from '@huntback/core';
+import { scoreBand, humanDuration, type CheckResult, type RunProgress } from '@huntback/core';
 
 // ── Совпадение (§11.3) ──────────────────────────────────────────────────────
 export function Score({ value, size = 'md' }: { value: number | null | undefined; size?: 'md' | 'sm' }) {
@@ -38,7 +38,7 @@ export function KindChip({ kind }: { kind: 'vacancy' | 'hypothesis' }) {
 // ── Статус-бар (§13.2) ──────────────────────────────────────────────────────
 export type Status =
   | { kind: 'idle' }
-  | { kind: 'busy'; text: string; since?: number }
+  | { kind: 'busy'; text: string; progress?: RunProgress | null }
   | { kind: 'ok'; text: string }
   | { kind: 'error'; text: string }
   | { kind: 'info'; text: string };
@@ -46,18 +46,44 @@ export type Status =
 export function StatusBar({ status, elapsed, onDismiss }:
 { status: Status; elapsed: number; onDismiss: () => void }) {
   if (status.kind === 'idle') return null;
-  const cls = `statusbar statusbar--${status.kind}`;
+  const progress = status.kind === 'busy' ? status.progress ?? null : null;
   return (
-    <div className={cls} role="status" aria-live="polite">
-      {status.kind === 'busy' && <span className="spinner" aria-hidden />}
-      <span>
-        {status.text}
-        {/* Долгие операции без счётчика читаются как зависшие (§13.2). */}
-        {status.kind === 'busy' && elapsed > 0 && <span className="muted"> · {elapsed} с</span>}
-      </span>
+    <div className={`statusbar statusbar--${status.kind}`} role="status" aria-live="polite">
+      {status.kind === 'busy' && !progress && <span className="spinner" aria-hidden />}
+      <div className="statusbar-body">
+        <span>
+          {progress ? progress.label : status.text}
+          {progress?.detail && <span className="muted"> · {progress.detail}</span>}
+          {/* Долгие операции без счётчика читаются как зависшие (§13.2). */}
+          {status.kind === 'busy' && !progress && elapsed > 0 && (
+            <span className="muted"> · {elapsed} с</span>
+          )}
+        </span>
+        {progress && <RunBar p={progress} />}
+      </div>
       {status.kind !== 'busy' && (
         <button onClick={onDismiss} aria-label="Закрыть сообщение">✕</button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Полоса прогона поиска. Проценты и остаток считает ядро — та же функция, что
+ * на сервере, поэтому полоса не может разойтись с реальным ходом работы.
+ */
+function RunBar({ p }: { p: RunProgress }) {
+  const done = p.stage === 'done';
+  return (
+    <div className="runbar">
+      <div className="runbar-track" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={p.percent} aria-label="Прогресс поиска">
+        <i style={{ width: `${Math.max(2, p.percent)}%` }} />
+      </div>
+      <span className="runbar-meta">
+        {p.percent}%
+        {!done && p.remainingSec > 0 && <> · осталось {humanDuration(p.remainingSec)}</>}
+      </span>
     </div>
   );
 }

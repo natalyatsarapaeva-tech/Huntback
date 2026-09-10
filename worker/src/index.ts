@@ -9,7 +9,7 @@
 import {
   checkBudget, checkRunLimit, findDuplicate, reanalyseAfterProfileChange,
   computeScore, coverage, auditProfile, checkResume, checkLetter,
-  type Demand, type Opportunity,
+  estimateRunSeconds, type RunEvent, type Demand, type Opportunity,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
 import { authStart, authCallback, logout, requireSession } from './auth.ts';
@@ -17,24 +17,18 @@ import * as db from './store.ts';
 import { PROMPT_META, DEFAULT_PROMPTS } from './prompts.ts';
 import {
   type Ctx, runAudit, runAnalyse, runIngest, runResume, runLetter, runSwapTest,
-  runDiscover, fetchJobPage, formatForCountry,
+  runDiscover, discoverAngles, fetchJobPage, formatForCountry,
 } from './operations.ts';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     try {
+      // Статику отдаёт привязка assets; сюда приходит только API (§4.1).
       if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
-      return await route(request, env, url);
+      return await route(request, env, url, ctx);
     } catch (e) {
       return errorResponse(e);
-    }
-  },
-
-  // Consumer очереди прогонов (§9.1).
-  async queue(batch: MessageBatch<{ run_id: string; user_id: string }>, env: Env): Promise<void> {
-    for (const msg of batch.messages) {
-      try { await executeRun(env, msg.body.run_id, msg.body.user_id); } finally { msg.ack(); }
     }
   },
 };
@@ -54,7 +48,7 @@ async function body<T>(request: Request): Promise<T> {
   try { return await request.json() as T; } catch { return {} as T; }
 }
 
-async function route(request: Request, env: Env, url: URL): Promise<Response> {
+async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
   const p = url.pathname;
   const m = request.method;
 
@@ -282,14 +276,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
   // ── Прогоны (§8.4, §9) ───────────────────────────────────────────────────
   if (p === '/api/runs' && m === 'POST') {
-    const cfg = await db.loadConfig(env);
-    const limit = checkRunLimit(await db.runsToday(env, userId), cfg);
-    if (!limit.allow) throw new ApiError('run_limit', limit.reason ?? 'Лимит прогонов', 429);
-    const runId = uid();
-    await env.DB.prepare('INSERT INTO runs (id,user_id,state,stage,started_at) VALUES (?,?,?,?,?)')
-      .bind(runId, userId, 'queued', 'В очереди', nowIso()).run();
-    await env.RUNS.send({ run_id: runId, user_id: userId });
-    return json({ run_id: runId }, 202);
+    return startStreamingRun(env, userId, ctx);
   }
   const runMatch = p.match(/^\/api\/runs\/([\w-]+)$/);
   if (runMatch && m === 'GET') {
@@ -355,35 +342,102 @@ async function loadDemand(env: Env, oppId: string, opp: Opportunity): Promise<De
   return { country: opp.country ?? null };
 }
 
-// ── Фоновый прогон (§9.1) ───────────────────────────────────────────────────
-const STAGES = [
-  'Формирую поисковые запросы',
-  'Ищу открытые вакансии',
-  'Ищу компании с сигналами',
-  'Проверяю на дубли',
-  'Записываю в таблицу',
-];
+// ── Прогон поиска в запросе, со стримом прогресса (§9 в редакции 1.3) ──────
+//
+// Очередей нет. Прогон идёт прямо в HTTP-запросе, а прогресс отдаётся
+// построчным NDJSON — соединение всё время что-то передаёт, поэтому не
+// простаивает, и клиент рисует полосу по реальным событиям.
+//
+// Два следствия, ради которых так и сделано:
+//   — приложению не нужен платный план Workers (queues был единственной
+//     платной частью);
+//   — найденные места пишутся в базу ПО ХОДУ, поэтому закрытая вкладка не
+//     стирает результат: работа продолжается в ctx.waitUntil и доводится
+//     до конца.
 
-async function setStage(env: Env, runId: string, stage: string): Promise<void> {
-  await env.DB.prepare('UPDATE runs SET state=?, stage=? WHERE id=?').bind('running', stage, runId).run();
+async function startStreamingRun(env: Env, userId: string, ctx: ExecutionContext): Promise<Response> {
+  const cfg = await db.loadConfig(env);
+  const limit = checkRunLimit(await db.runsToday(env, userId), cfg);
+  if (!limit.allow) throw new ApiError('run_limit', limit.reason ?? 'Лимит прогонов', 429);
+
+  const runId = uid();
+  await env.DB.prepare('INSERT INTO runs (id,user_id,state,stage,started_at) VALUES (?,?,?,?,?)')
+    .bind(runId, userId, 'running', 'Формирую поисковые запросы', nowIso()).run();
+
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  let open = true;
+
+  // Клиент мог закрыть вкладку. Это не причина бросать работу и не причина
+  // падать: перестаём писать и продолжаем складывать найденное в базу.
+  const send = async (event: RunEvent & { run_id?: string }) => {
+    if (!open) return;
+    try {
+      await writer.write(encoder.encode(JSON.stringify({ run_id: runId, ...event }) + '\n'));
+    } catch {
+      open = false;
+    }
+  };
+
+  ctx.waitUntil(executeRun(env, cfg, userId, runId, send).finally(async () => {
+    open = false;
+    try { await writer.close(); } catch { /* соединение уже закрыто */ }
+  }));
+
+  return new Response(readable, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      // Ни один посредник не должен буферизовать поток: иначе прогресс придёт
+      // одним куском в самом конце и полоса окажется бесполезной.
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }
 
-async function executeRun(env: Env, runId: string, userId: string): Promise<void> {
+async function executeRun(
+  env: Env,
+  cfg: Awaited<ReturnType<typeof db.loadConfig>>,
+  userId: string,
+  runId: string,
+  send: (e: RunEvent) => Promise<void>,
+): Promise<void> {
+  const setStage = async (stage: string) => {
+    await env.DB.prepare('UPDATE runs SET stage=? WHERE id=?').bind(stage, runId).run();
+  };
+
   try {
-    const ctx = await ctxFor(env, userId);
+    const prompts = await db.loadPromptOverrides(env);
+    const opCtx = { env, cfg, prompts, userId };
     const profile = await db.getProfile(env, userId);
-    await setStage(env, runId, STAGES[0]);
+
+    const angles = discoverAngles(opCtx, profile);
+    const estimateSec = estimateRunSeconds(angles.length, cfg.models.maxConcurrency);
+    await send({ stage: 'plan', anglesTotal: angles.length, estimateSec });
+    await setStage('Формирую поисковые запросы');
 
     const existing = await db.listOpportunities(env, userId, {});
-    await setStage(env, runId, STAGES[1]);
-    const found = await runDiscover(ctx, profile, existing.map(o => o.company), 8);
-
-    await setStage(env, runId, STAGES[3]);
     const index = existing.map(o => ({ id: o.id, company_key: o.company_key, role_title: o.role_title }));
+
+    await send({ stage: 'search', anglesDone: 0, anglesTotal: angles.length, estimateSec });
+    await setStage('Ищу вакансии и компании с сигналами');
+
+    const found = await runDiscover(
+      opCtx, profile, existing.map(o => o.company), 8,
+      (done, total) => { void send({ stage: 'search', anglesDone: done, anglesTotal: total, estimateSec }); },
+    );
+
+    await send({ stage: 'dedup', anglesDone: angles.length, anglesTotal: angles.length, estimateSec });
+    await setStage('Проверяю на дубли');
+
     let added = 0;
     for (const item of found) {
       if (!item) continue;
       if (findDuplicate({ company: item.company, role_title: item.role_title }, index)) continue;
+      // Запись сразу, а не пачкой в конце: если прогон прервётся, уже найденное
+      // останется у пользователя.
       const id = await db.createOpportunity(env, userId, {
         company: item.company, role_title: item.role_title, kind: item.kind,
         origin: 'discovered', industry: item.industry, city: item.city, country: item.country,
@@ -396,10 +450,18 @@ async function executeRun(env: Env, runId: string, userId: string): Promise<void
       index.push({ id, company_key: item.company, role_title: item.role_title });
       added++;
     }
+
+    await send({ stage: 'save', anglesDone: angles.length, anglesTotal: angles.length, estimateSec });
+    await setStage('Сохраняю найденное');
+
     await env.DB.prepare('UPDATE runs SET state=?, stage=?, found=?, added=?, finished_at=? WHERE id=?')
       .bind('done', 'Готово', found.length, added, nowIso(), runId).run();
+    await send({ stage: 'done', found: found.length, added, estimateSec });
   } catch (e) {
+    const message = e instanceof ApiError ? e.message
+      : 'Прогон не удался. Попробуйте ещё раз — кнопки разблокированы.';
     await env.DB.prepare('UPDATE runs SET state=?, error=?, finished_at=? WHERE id=?')
-      .bind('failed', e instanceof Error ? e.message : 'Прогон не удался', nowIso(), runId).run();
+      .bind('failed', message, nowIso(), runId).run();
+    await send({ stage: 'done', error: message });
   }
 }

@@ -28,15 +28,6 @@ migrations_dir = "migrations"
 binding = "KV"            # сессии, PKCE-state, access-токены Google, кэш
 id = "<создать: wrangler kv namespace create KV>"
 
-[[queues.producers]]
-binding = "RUNS"
-queue = "huntback-runs"
-
-[[queues.consumers]]
-queue = "huntback-runs"
-max_batch_size = 1
-max_retries = 2
-
 [vars]
 # ДОЛЖЕН совпадать с адресом, на котором открывается приложение: из него
 # собирается redirect_uri для Google. Пока нет своего домена — адрес workers.dev.
@@ -45,5 +36,6 @@ APP_ORIGIN = "https://huntback-api.CHANGE-ME.workers.dev"
 # Секреты (wrangler secret put) — в репозиторий не попадают:
 #   OPENAI_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET TOKEN_ENC_KEY
 #
-# Очереди (queues) требуют платного плана Workers. D1 и KV укладываются в
-# бесплатный. Подробности и что делать без платного плана — в SETUP.md.
+# Очередей нет намеренно (§9 в редакции 1.3): поиск идёт прямо в запросе и
+# стримит прогресс. Поэтому всё приложение укладывается в БЕСПЛАТНЫЙ план
+# Workers — платный нужен был только под queues.

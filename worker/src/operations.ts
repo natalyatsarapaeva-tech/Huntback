@@ -369,11 +369,20 @@ function splitPerimeter(perimeter: string, max: number): string[] {
   return parts.length ? parts.slice(0, max) : [perimeter || 'подходящие руководящие роли'];
 }
 
-export async function runDiscover(ctx: Ctx, profile: Profile, known: string[], count = 8) {
+/** Направления поиска — по ним же считается оценка времени и прогресс. */
+export function discoverAngles(ctx: Ctx, profile: Profile): string[] {
+  return splitPerimeter(profile.perimeter, ctx.cfg.models.maxConcurrency * 2);
+}
+
+export async function runDiscover(
+  ctx: Ctx, profile: Profile, known: string[], count = 8,
+  onAngleDone?: (done: number, total: number) => void,
+) {
   // Запросы идут ПУЛОМ, а не последовательно: §14 требует p95 < 180 с, и
   // последовательный обход шести веб-запросов в него не укладывается (§4.3.3).
-  const angles = splitPerimeter(profile.perimeter, ctx.cfg.models.maxConcurrency * 2);
+  const angles = discoverAngles(ctx, profile);
   const perAngle = Math.ceil(count / angles.length) + 1;
+  let done = 0;
   const batches = await mapWithConcurrency(angles, ctx.cfg.models.maxConcurrency, async angle => {
     try {
       const { data } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
@@ -388,6 +397,10 @@ export async function runDiscover(ctx: Ctx, profile: Profile, known: string[], c
       return data.items ?? [];
     } catch {
       return [];    // один неудачный угол не роняет прогон целиком
+    } finally {
+      // Сообщаем о завершении и удачного, и неудачного направления: полоса
+      // прогресса не должна останавливаться из-за того, что один запрос упал.
+      onAngleDone?.(++done, angles.length);
     }
   });
   return batches.flat().map(sanitizeDiscoverItem).filter(Boolean);

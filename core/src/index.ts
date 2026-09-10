@@ -12,4 +12,5 @@ export * from './blockers.ts';
 export * from './checks.ts';
 export * from './audit.ts';
 export * from './budget.ts';
+export * from './run.ts';
 export * from './sanitize.ts';

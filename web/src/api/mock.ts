@@ -15,11 +15,11 @@
 import {
   auditProfile, computeScore, coverage, checkLetter, checkResume,
   evaluateGaps, reanalyseAfterProfileChange, checkBudget, findDuplicate, companyKey,
-  type Demand,
+  estimateRunSeconds, type Demand,
 } from '@huntback/core';
 import type {
   Api, Profile, Fact, Opportunity, Analysis, OpportunityDetail,
-  DocumentRecord, ImportResult, ParsedJob, RunState, UsageSummary, Me,
+  DocumentRecord, ImportResult, ParsedJob, UsageSummary, Me,
 } from './types.ts';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -201,8 +201,6 @@ const usageLog = [
   { operation: 'letter' as const, model: 'gpt-5.6-terra', tokens_in: 9000, tokens_out: 700, tool_calls: 0, cost_usd: 0.011, ok: true, created_at: new Date(Date.now() - 864e5).toISOString() },
   { operation: 'letter' as const, model: 'gpt-5.6-terra', tokens_in: 0, tokens_out: 0, tool_calls: 0, cost_usd: 0, ok: false, created_at: new Date(Date.now() - 3600e3).toISOString() },
 ];
-
-let runs: Record<string, RunState> = {};
 
 export const mockApi: Api = {
   async me(): Promise<Me> {
@@ -423,18 +421,25 @@ export const mockApi: Api = {
     return { checks: out.checks };
   },
 
-  async startRun() {
-    const id = 'run-' + Date.now();
-    runs[id] = { id, state: 'queued', stage: 'В очереди', found: 0, added: 0, error: null };
-    const stages = ['Формирую поисковые запросы', 'Ищу открытые вакансии', 'Ищу компании с сигналами', 'Проверяю на дубли', 'Записываю в таблицу'];
-    stages.forEach((s, i) => setTimeout(() => { runs[id] = { ...runs[id], state: 'running', stage: s }; }, 700 * (i + 1)));
-    setTimeout(() => { runs[id] = { ...runs[id], state: 'done', stage: 'Готово', found: 7, added: 3 }; }, 700 * (stages.length + 1));
-    return { run_id: id };
-  },
-
-  async getRun(id) {
-    await delay(60);
-    return runs[id];
+  async runSearch(onEvent) {
+    // Имитируем ровно ту же последовательность событий, что присылает воркер,
+    // с правдоподобными задержками: полосу прогресса надо проверять на том же
+    // потоке, который будет в проде, а не на мгновенном результате.
+    const anglesTotal = 4;
+    const estimateSec = estimateRunSeconds(anglesTotal, 3);
+    onEvent({ stage: 'plan', anglesTotal, estimateSec });
+    await delay(500);
+    onEvent({ stage: 'search', anglesDone: 0, anglesTotal, estimateSec });
+    for (let i = 1; i <= anglesTotal; i++) {
+      await delay(1400);
+      onEvent({ stage: 'search', anglesDone: i, anglesTotal, estimateSec });
+    }
+    onEvent({ stage: 'dedup', anglesDone: anglesTotal, anglesTotal, estimateSec });
+    await delay(500);
+    onEvent({ stage: 'save', anglesDone: anglesTotal, anglesTotal, estimateSec });
+    await delay(400);
+    // Демо ничего не дописывает в список — иначе повторные прогоны его засорят.
+    onEvent({ stage: 'done', found: 7, added: 0, estimateSec });
   },
 
   async usage(): Promise<UsageSummary> {

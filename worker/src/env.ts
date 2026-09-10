@@ -1,7 +1,6 @@
 export interface Env {
   DB: D1Database;
   KV: KVNamespace;
-  RUNS: Queue;
   APP_ORIGIN: string;
   OPENAI_API_KEY: string;
   GOOGLE_CLIENT_ID: string;

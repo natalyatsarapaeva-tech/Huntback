@@ -1,11 +1,11 @@
 import type {
   Profile, Fact, Opportunity, Analysis, CheckResult, AuditReport, BudgetStatus, Coverage,
-  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker,
+  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent,
 } from '@huntback/core';
 
 export type {
   Profile, Fact, Opportunity, Analysis, CheckResult, AuditReport, BudgetStatus, Coverage,
-  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker,
+  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent,
 };
 
 export interface Me {
@@ -57,7 +57,7 @@ export interface ImportResult {
 }
 
 export interface RunState {
-  id: string; state: 'queued' | 'running' | 'done' | 'failed';
+  id: string; state: 'running' | 'done' | 'failed';
   stage: string | null; found: number; added: number; error: string | null;
 }
 
@@ -78,7 +78,11 @@ export interface Api {
   makeResume(id: string): Promise<{ doc: unknown; checks: CheckResult[] }>;
   makeLetter(id: string, tone?: string): Promise<{ doc: { subject: string; body: string }; checks: CheckResult[] }>;
   saveDocument(id: string, patch: { body?: string; subject?: string }): Promise<{ checks: CheckResult[] }>;
-  startRun(): Promise<{ run_id: string }>;
-  getRun(id: string): Promise<RunState>;
+  /**
+   * Поиск по кнопке. Очередей нет: прогон идёт в одном запросе и присылает
+   * события по ходу, поэтому вместо «запустить и опрашивать» — один вызов,
+   * который зовёт onEvent на каждом шаге и завершается вместе с прогоном.
+   */
+  runSearch(onEvent: (e: RunEvent) => void): Promise<void>;
   usage(): Promise<UsageSummary>;
 }
