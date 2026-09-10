@@ -12,7 +12,7 @@ const assets = readdirSync(join(DIST, 'assets'));
 const css = readFileSync(join(DIST, 'assets', assets.find(f => f.endsWith('.css'))), 'utf8');
 const js = readFileSync(join(DIST, 'assets', assets.find(f => f.endsWith('.js'))), 'utf8');
 
-const html = `<title>Периметр</title>
+const html = `<title>Huntback</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Spectral:wght@400;500;600&display=swap">
 <style>
