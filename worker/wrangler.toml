@@ -6,6 +6,18 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Адрес вида huntback-api.<subdomain>.workers.dev. Этого достаточно, чтобы
+# приложение заработало; свой домен добавляется позже и ничего не ломает.
+workers_dev = true
+
+# ОДИН ORIGIN (§4.1). Воркер отдаёт и собранную SPA, и /api/*, поэтому нет ни
+# CORS, ни проблем со сторонними cookie. `run_worker_first` обязателен: без него
+# SPA-фолбэк перехватил бы /api/* и вернул index.html вместо ответа API.
+[assets]
+directory = "../web/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "huntback"
@@ -26,7 +38,12 @@ max_batch_size = 1
 max_retries = 2
 
 [vars]
-APP_ORIGIN = "https://huntback.app"
+# ДОЛЖЕН совпадать с адресом, на котором открывается приложение: из него
+# собирается redirect_uri для Google. Пока нет своего домена — адрес workers.dev.
+APP_ORIGIN = "https://huntback-api.CHANGE-ME.workers.dev"
 
 # Секреты (wrangler secret put) — в репозиторий не попадают:
-#   OPENAI_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET TOKEN_ENC_KEY SESSION_PEPPER
+#   OPENAI_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET TOKEN_ENC_KEY
+#
+# Очереди (queues) требуют платного плана Workers. D1 и KV укладываются в
+# бесплатный. Подробности и что делать без платного плана — в SETUP.md.

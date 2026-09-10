@@ -7,7 +7,9 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   TOKEN_ENC_KEY: string;
-  SESSION_PEPPER: string;
+  // SESSION_PEPPER (§6) сюда вернётся вместе с логированием идентификаторов
+  // сессий. Пока таких логов нет, и секрет не заводится: обязательный секрет,
+  // который ничего не делает, — это ложный шаг в инструкции по настройке.
 }
 
 /**

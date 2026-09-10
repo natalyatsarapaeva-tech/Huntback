@@ -79,6 +79,13 @@ schema → parse → retry(1) → sanitize → validate → log(usage)
 снимающие сомнения. Третий шаг честно говорит, что это разовая работа и что
 неподтверждённые факты не попадут никуда.
 
+## Как довести до рабочего состояния
+
+Пошаговая инструкция с нуля — [`SETUP.md`](SETUP.md): Cloudflare (D1, KV,
+очередь), OpenAI (ключ проекта и лимит), Google Cloud (вход через Google), и
+проверка по сценарию. Firestore не нужен — Huntback на Firebase не построен
+(§4.2.3).
+
 ## Витрина на GitHub Pages
 
 `https://natalyatsarapaeva-tech.github.io/huntback/` — публикуется автоматически
