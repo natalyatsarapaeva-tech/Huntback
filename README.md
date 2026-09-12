@@ -82,7 +82,9 @@ schema → parse → retry(1) → sanitize → validate → log(usage)
 
 Пошаговая инструкция с нуля — [`SETUP.md`](SETUP.md): Cloudflare (D1 и KV),
 OpenAI (ключ проекта и лимит), Google Cloud (вход через Google), и проверка по
-сценарию. **Платный план Cloudflare не нужен** — очередей в приложении нет. Firestore не нужен — Huntback на Firebase не построен
+сценарию. Всё делается **в браузере, без терминала** — деплой выполняет
+GitHub Actions (`.github/workflows/deploy.yml`) по кнопке. **Платный план
+Cloudflare не нужен** — очередей в приложении нет. Firestore не нужен — Huntback на Firebase не построен
 (§4.2.3).
 
 ## Витрина на GitHub Pages

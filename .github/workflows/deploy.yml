@@ -1,0 +1,69 @@
+# Деплой приложения в Cloudflare — из браузера, без терминала.
+#
+# Запускается кнопкой (Actions → Deploy → Run workflow) и автоматически при
+# изменениях кода приложения в main. Правки документации прод не трогают.
+#
+# Что нужно один раз положить в Settings → Secrets and variables → Actions:
+#   CLOUDFLARE_API_TOKEN   — токен с правами Workers Scripts:Edit, D1:Edit,
+#                            Workers KV Storage:Edit
+#   CLOUDFLARE_ACCOUNT_ID  — идентификатор аккаунта из панели Cloudflare
+#
+# Секреты самого приложения (OPENAI_API_KEY и прочие) здесь НЕ нужны: они
+# живут в настройках воркера в панели Cloudflare, и деплой их не стирает.
+# Так секрет существует в одном месте, а не в двух.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'worker/**'
+      - 'web/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Красная логика в прод не уезжает.
+      - run: npm test
+      - run: npm run typecheck
+
+      # Воркер отдаёт собранную SPA через привязку assets (§4.1), поэтому
+      # сборка обязательна ДО деплоя. Без флагов витрины: это настоящее
+      # приложение, со входом через Google.
+      - run: npm run build
+
+      - name: Применить миграции к базе
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          command: d1 migrations apply huntback --remote
+
+      - name: Задеплоить воркер вместе с интерфейсом
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          command: deploy

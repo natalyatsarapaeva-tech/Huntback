@@ -1,12 +1,12 @@
 # Воркер Huntback. ОТДЕЛЬНЫЙ деплой и ОТДЕЛЬНЫЙ project-ключ OpenAI:
 # общий `task-intake-worker` семейства Twin защищён только проверкой Origin,
 # и переиспользовать его здесь нельзя (§4.3.1, критерий приёмки 13).
-name = "huntback-api"
+name = "huntback"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Адрес вида huntback-api.<subdomain>.workers.dev. Этого достаточно, чтобы
+# Адрес вида huntback.<subdomain>.workers.dev. Этого достаточно, чтобы
 # приложение заработало; свой домен добавляется позже и ничего не ломает.
 workers_dev = true
 
@@ -31,7 +31,7 @@ id = "<создать: wrangler kv namespace create KV>"
 [vars]
 # ДОЛЖЕН совпадать с адресом, на котором открывается приложение: из него
 # собирается redirect_uri для Google. Пока нет своего домена — адрес workers.dev.
-APP_ORIGIN = "https://huntback-api.CHANGE-ME.workers.dev"
+APP_ORIGIN = "https://huntback.CHANGE-ME.workers.dev"
 
 # Секреты (wrangler secret put) — в репозиторий не попадают:
 #   OPENAI_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET TOKEN_ENC_KEY
