@@ -4,13 +4,20 @@
 # изменениях кода приложения в main. Правки документации прод не трогают.
 #
 # Что нужно один раз положить в Settings → Secrets and variables → Actions:
-#   CLOUDFLARE_API_TOKEN   — токен с правами Workers Scripts:Edit, D1:Edit,
-#                            Workers KV Storage:Edit
+#   CLOUDFLARE_API_TOKEN   — токен из шаблона «Edit Cloudflare Workers»
+#                            плюс право D1:Edit (см. SETUP.md, шаг 4)
 #   CLOUDFLARE_ACCOUNT_ID  — идентификатор аккаунта из панели Cloudflare
 #
 # Секреты самого приложения (OPENAI_API_KEY и прочие) здесь НЕ нужны: они
 # живут в настройках воркера в панели Cloudflare, и деплой их не стирает.
 # Так секрет существует в одном месте, а не в двух.
+#
+# Wrangler вызывается через npm-скрипты воркера, а не через сторонний action.
+# Причина конкретная: action подставлял свой предустановленный wrangler 3.90,
+# который не знает про `run_worker_first` в [assets] и молча его игнорировал —
+# а без этой настройки SPA-фолбэк перехватывает /api/* и API перестаёт
+# отвечать. Версия wrangler зафиксирована в worker/package.json, и так она
+# ровно одна и та же в CI и на машине разработчика.
 
 name: Deploy
 
@@ -33,6 +40,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +53,15 @@ jobs:
 
       - run: npm ci
 
+      - name: Проверить, что секреты Cloudflare заданы
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Не заданы CLOUDFLARE_API_TOKEN и/или CLOUDFLARE_ACCOUNT_ID." \
+                 "Settings → Secrets and variables → Actions. Инструкция — SETUP.md, шаг 4."
+            exit 1
+          fi
+          echo "Секреты на месте."
+
       # Красная логика в прод не уезжает.
       - run: npm test
       - run: npm run typecheck
@@ -52,18 +71,26 @@ jobs:
       # приложение, со входом через Google.
       - run: npm run build
 
+      # Проверка конфига без обращения к аккаунту: ловит опечатки в
+      # wrangler.toml и неизвестные поля до того, как что-то поедет в прод.
+      - name: Проверить конфиг воркера
+        run: npx wrangler deploy --dry-run
+        working-directory: worker
+
       - name: Применить миграции к базе
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: worker
-          command: d1 migrations apply huntback --remote
+        run: npm run migrate -w worker
+
+      # Лог должен сам доказывать, что таблицы есть: «No migrations to apply»
+      # выглядит одинаково и когда всё применено, и когда wrangler не нашёл
+      # папку с миграциями.
+      - name: Показать таблицы в базе
+        run: |
+          npx wrangler d1 execute huntback --remote --json \
+            --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        working-directory: worker
 
       - name: Задеплоить воркер вместе с интерфейсом
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: worker
-          command: deploy
+        run: npm run deploy -w worker
+
+      - name: Адрес приложения
+        run: echo "### Готово — https://huntback.ntsarapaeva.workers.dev" >> $GITHUB_STEP_SUMMARY

@@ -8,5 +8,8 @@
     "deploy": "wrangler deploy",
     "migrate:local": "wrangler d1 migrations apply huntback --local",
     "migrate": "wrangler d1 migrations apply huntback --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
   }
 }
