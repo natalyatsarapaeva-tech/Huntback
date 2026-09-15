@@ -286,6 +286,7 @@ btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
 | Симптом | Причина и что делать |
 |---|---|
 | `redirect_uri_mismatch` при входе | адрес в настройках приложения не совпадает с Authorized redirect URI в Google. Должны совпадать посимвольно, включая `https://` и отсутствие слэша на конце |
+| `401: invalid_client` от Google | Google не принял идентификатор клиента. Приложение теперь проверяет это само и вместо редиректа показывает страницу с причиной — откройте `/api/auth/start` и прочитайте, что там написано. Три причины по частоте: секреты ещё не заданы (шаг 8); `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` перепутаны местами; клиент создан с типом «Desktop app» вместо «Web application» |
 | Прогон Deploy падает на миграциях | не вписан Database ID из шага 1, либо у токена нет права D1:Edit |
 | Прогон Deploy падает на `deploy` с `Authentication error [code: 10000]` на `assets-upload-session` | у токена не хватает прав на загрузку статики. Пересоздайте его из шаблона **«Edit Cloudflare Workers»** плюс D1:Edit — шаг 4. Собранный вручную минимальный набор прав здесь не работает |
 | В логе `Unexpected fields found in assets field: "run_worker_first"` | старый wrangler. Версия зафиксирована в `worker/package.json`, и workflow вызывает её напрямую; если предупреждение вернулось — значит wrangler откуда-то подставился другой, скажите мне |

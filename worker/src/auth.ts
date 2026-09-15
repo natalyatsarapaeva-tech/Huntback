@@ -21,15 +21,89 @@ function randomToken(bytes = 32): string {
   return b64url(crypto.getRandomValues(new Uint8Array(bytes)).buffer);
 }
 
+/**
+ * Конфигурация Google из секретов воркера — с проверкой ДО редиректа.
+ *
+ * Без неё незаданный секрет превращался в строку «undefined», уезжал в Google
+ * как client_id, и пользователь получал `401: invalid_client` — ошибку, из
+ * которой невозможно понять, что именно не настроено. Приложение обязано
+ * говорить это само, а не перекладывать на чужой экран.
+ */
+interface GoogleConfig { clientId: string; clientSecret: string; redirectUri: string }
+
+class SetupError extends Error {
+  hint: string;
+  constructor(message: string, hint: string) {
+    super(message);
+    this.name = 'SetupError';
+    this.hint = hint;
+  }
+}
+
+function googleConfig(env: Env): GoogleConfig {
+  // Пробел или перевод строки на конце — самая частая порча секрета при
+  // копировании, и Google на неё отвечает тем же invalid_client.
+  const clientId = String(env.GOOGLE_CLIENT_ID ?? '').trim();
+  const clientSecret = String(env.GOOGLE_CLIENT_SECRET ?? '').trim();
+
+  const missing = [
+    !clientId && 'GOOGLE_CLIENT_ID',
+    !clientSecret && 'GOOGLE_CLIENT_SECRET',
+  ].filter(Boolean) as string[];
+  if (missing.length) {
+    throw new SetupError(
+      `Не заданы секреты воркера: ${missing.join(', ')}.`,
+      'Панель Cloudflare → Compute (Workers) → huntback → Settings → '
+      + 'Variables and Secrets → Add, тип Secret. Инструкция — SETUP.md, шаг 8.',
+    );
+  }
+  // Идентификатор клиента Google всегда оканчивается так. Проверка ловит
+  // самую обидную ошибку: Client ID и Client secret перепутаны местами.
+  if (!clientId.endsWith('.apps.googleusercontent.com')) {
+    throw new SetupError(
+      'GOOGLE_CLIENT_ID не похож на идентификатор клиента Google.',
+      'Он должен оканчиваться на .apps.googleusercontent.com. Проверьте, не '
+      + 'перепутаны ли Client ID и Client secret, и что клиент создан с типом '
+      + '«Web application», а не «Desktop app».',
+    );
+  }
+  return { clientId, clientSecret, redirectUri: `${env.APP_ORIGIN}/api/auth/callback` };
+}
+
+/**
+ * Страница про незавершённую настройку. Единственное место, где воркер отвечает
+ * HTML, а не JSON (§8): на /api/auth/start браузер приходит по ссылке, и
+ * человеку тут нужен текст, а не тело ответа для кода.
+ */
+function setupPage(e: SetupError): Response {
+  const esc = (t: string) => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><title>Huntback — настройка не завершена</title>`
+    + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 1.5rem;color:#27333c}`
+    + `h1{font-size:1.3rem;margin:0 0 .75rem}code{background:#f0f2f4;padding:.1em .35em;border-radius:4px}`
+    + `p{margin:0 0 1rem}.hint{color:#64798b;font-size:.94rem}</style>`
+    + `<h1>Вход ещё не настроен</h1><p>${esc(e.message)}</p><p class="hint">${esc(e.hint)}</p>`,
+    { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+  );
+}
+
 export async function authStart(env: Env, url: URL): Promise<Response> {
+  let cfg: GoogleConfig;
+  try {
+    cfg = googleConfig(env);
+  } catch (e) {
+    if (e instanceof SetupError) return setupPage(e);
+    throw e;
+  }
+
   const state = randomToken(16);
   const verifier = randomToken(32);
   const challenge = b64url(await sha256(verifier));
   await env.KV.put(`pkce:${state}`, verifier, { expirationTtl: PKCE_TTL });
 
   const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  auth.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
-  auth.searchParams.set('redirect_uri', `${env.APP_ORIGIN}/api/auth/callback`);
+  auth.searchParams.set('client_id', cfg.clientId);
+  auth.searchParams.set('redirect_uri', cfg.redirectUri);
   auth.searchParams.set('response_type', 'code');
   auth.searchParams.set('scope', SCOPES.join(' '));
   auth.searchParams.set('state', state);
@@ -49,14 +123,15 @@ export async function authCallback(env: Env, url: URL): Promise<Response> {
   if (!verifier) throw new ApiError('auth_state_expired', 'Вход занял слишком много времени. Начните заново.', 400);
   await env.KV.delete(`pkce:${state}`);
 
+  const cfg = googleConfig(env);
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${env.APP_ORIGIN}/api/auth/callback`,
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+      redirect_uri: cfg.redirectUri,
       grant_type: 'authorization_code',
       code_verifier: verifier,
     }),
@@ -190,11 +265,12 @@ export async function googleAccessToken(env: Env, userId: string): Promise<strin
   if (!row?.refresh_token_enc) throw new ApiError('google_reauth_required', 'Нужно заново разрешить доступ к Google', 401);
 
   const refresh = await decryptToken(env, row.refresh_token_enc);
+  const cfgRefresh = googleConfig(env);
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
+      client_id: cfgRefresh.clientId, client_secret: cfgRefresh.clientSecret,
       refresh_token: refresh, grant_type: 'refresh_token',
     }),
   });
