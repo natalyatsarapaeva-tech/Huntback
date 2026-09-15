@@ -137,7 +137,37 @@ export async function authStart(env: Env, url: URL): Promise<Response> {
   return Response.redirect(auth.toString(), 302);
 }
 
+/** Отказы, с которыми Google возвращает пользователя на наш callback. */
+const OAUTH_REFUSALS: Record<string, { message: string; hint: string }> = {
+  access_denied: {
+    message: 'Google не пустил в приложение.',
+    hint: 'Либо вы отменили вход, либо этот аккаунт не в списке тестировщиков: '
+      + 'console.cloud.google.com → Google Auth Platform → Audience → Test users. '
+      + 'Адрес должен совпадать с тем, которым вы входите.',
+  },
+  admin_policy_enforced: {
+    message: 'Политика вашей организации Google запрещает вход в это приложение.',
+    hint: 'Войдите личным аккаунтом Google либо попросите администратора разрешить приложение.',
+  },
+  org_internal: {
+    message: 'Приложение настроено только для пользователей одной организации.',
+    hint: 'В Google Auth Platform → Audience поменяйте тип на External.',
+  },
+};
+
 export async function authCallback(env: Env, url: URL): Promise<Response> {
+  // Отказ приходит параметром error, а не отсутствием code. Без этой ветки
+  // отмена входа выглядела как «Google вернул неполный ответ» — сообщение,
+  // которое отправляет искать поломку там, где её нет.
+  const refusal = url.searchParams.get('error');
+  if (refusal) {
+    const known = OAUTH_REFUSALS[refusal];
+    return setupPage(new SetupError(
+      known?.message ?? `Google отказал во входе: ${refusal}.`,
+      known?.hint ?? 'Попробуйте войти заново. Если повторяется — пришлите код ошибки.',
+    ));
+  }
+
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   if (!code || !state) throw new ApiError('auth_bad_request', 'Google вернул неполный ответ', 400);

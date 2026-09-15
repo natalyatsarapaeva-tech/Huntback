@@ -170,32 +170,58 @@ GitHub → репозиторий `huntback` → вкладка **Actions** → 
 
 ## Шаг 7. Google Cloud: вход через Google
 
-1. `console.cloud.google.com` → создайте проект «Huntback».
-2. **APIs & Services → Library** → включите **Google Drive API**. (Приложение к
-   Диску пока не обращается — таблица §11 не реализована, — но scope
-   `drive.file` запрашивается при входе, и с включённым API не будет сюрпризов
-   при выборе scope.)
-3. **APIs & Services → OAuth consent screen**:
-   - тип **External**;
-   - название приложения, ваша почта для связи;
-   - **Scopes** → добавьте `openid`, `.../auth/userinfo.email`,
-     `.../auth/userinfo.profile`, `.../auth/drive.file`.
-     `drive.file` не относится к sensitive и **не требует верификации Google** —
-     именно поэтому §5.2 выбрал его, а не полный доступ к таблицам;
-   - режим оставьте **Testing**;
-   - **Test users** → добавьте свою почту (и всех, кто будет пробовать; до 100).
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
-   - тип **Web application**;
-   - **Authorized redirect URIs** → ровно один:
-     `https://huntback.ntsarapaeva.workers.dev/api/auth/callback`
-   - сохраните. Появятся **Client ID** и **Client secret** — скопируйте оба.
+Консоль Google в 2025 году переехала: то, что раньше было мастером «OAuth
+consent screen», теперь разнесено по страницам раздела **Google Auth
+Platform**. Ниже — по нынешнему расположению.
 
-**Про режим Testing — знайте заранее (§5.2):** в этом режиме refresh-токены
-Google **протухают через 7 дней**, то есть примерно раз в неделю придётся
-входить заново. Это не поломка и не ошибка настройки. Уйдёт, когда приложение
-пройдёт верификацию Google.
+**1.** `console.cloud.google.com` → селектор проекта сверху → **New Project** →
+название «Huntback» → Create. **Дождитесь переключения на новый проект** и
+проверьте его в селекторе: остаться в чужом проекте — самая частая потеря часа.
 
----
+**2. APIs & Services → Library** → найдите **Google Drive API** → **Enable**.
+(Приложение к Диску пока не обращается — таблица §11 не реализована, — но scope
+`drive.file` запрашивается при входе.)
+
+**3. Google Auth Platform → Branding** (или **Get started**, если раздел ещё не
+создан): название приложения `Huntback`, почта поддержки и контакт разработчика
+— ваши. Сохраните.
+
+**4. Google Auth Platform → Audience:**
+- **Audience type**: **External**
+- **Publishing status**: оставьте **Testing**
+- **Test users** → **Add users** → впишите свою почту → **Save**
+
+Это отдельная страница, а не шаг мастера. **Без неё вход отвечает `403:
+access_denied`** — Google пускает только перечисленных здесь.
+
+**5. Google Auth Platform → Data access** → **Add or remove scopes** →
+отметьте четыре:
+- `openid`
+- `.../auth/userinfo.email`
+- `.../auth/userinfo.profile`
+- `.../auth/drive.file`
+
+→ Update → Save. `drive.file` не относится к sensitive и **не требует
+верификации Google** — именно поэтому §5.2 выбрал его, а не полный доступ к
+таблицам.
+
+**6. APIs & Services → Credentials → Create Credentials → OAuth client ID:**
+- Application type: **Web application** ← критично, не Desktop app
+- **Authorized redirect URIs** → **Add URI** → вставьте целиком:
+
+```
+https://huntback.ntsarapaeva.workers.dev/api/auth/callback
+```
+
+- Create → откроется окно с **Client ID** и **Client Secret**. Скопируйте оба.
+
+**Про режим Testing — знайте заранее (§5.2):** refresh-токены Google в нём
+**протухают через 7 дней**, то есть примерно раз в неделю придётся входить
+заново. Это не поломка и не ошибка настройки. Уйдёт, когда приложение пройдёт
+верификацию Google.
+
+**Как понять, что получилось:** в списке Credentials есть клиент типа Web
+application, а в Audience — ваша почта среди Test users.
 
 ## Шаг 8. Секреты приложения — в панели воркера
 
@@ -286,6 +312,7 @@ btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
 | Симптом | Причина и что делать |
 |---|---|
 | `redirect_uri_mismatch` при входе | адрес в настройках приложения не совпадает с Authorized redirect URI в Google. Должны совпадать посимвольно, включая `https://` и отсутствие слэша на конце |
+| `403: access_denied`, «им могут пользоваться только одобренные тестировщики» | вашего аккаунта нет в списке тестировщиков: **Google Auth Platform → Audience → Test users → Add users**. Адрес должен совпадать с тем, которым вы входите — если в браузере несколько Google-аккаунтов, выберите нужный. Применяется иногда через минуту |
 | `401: invalid_client` от Google | Google не принял идентификатор клиента. Приложение теперь проверяет это само и вместо редиректа показывает страницу с причиной — откройте `/api/auth/start` и прочитайте, что там написано. Три причины по частоте: секреты ещё не заданы (шаг 8); `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET` перепутаны местами; клиент создан с типом «Desktop app» вместо «Web application» |
 | Прогон Deploy падает на миграциях | не вписан Database ID из шага 1, либо у токена нет права D1:Edit |
 | Прогон Deploy падает на `deploy` с `Authentication error [code: 10000]` на `assets-upload-session` | у токена не хватает прав на загрузку статики. Пересоздайте его из шаблона **«Edit Cloudflare Workers»** плюс D1:Edit — шаг 4. Собранный вручную минимальный набор прав здесь не работает |
