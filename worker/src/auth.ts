@@ -234,11 +234,24 @@ function cookie(name: string, value: string, o: { httpOnly: boolean; maxAge: num
   ].filter(Boolean).join('; ');
 }
 
+/**
+ * Разбор id_token. Подпись не проверяем сознательно: токен получен по HTTPS
+ * прямо от Google в обмен на код и не проходил через браузер (§5.1).
+ *
+ * Здесь раньше стоял приём `decodeURIComponent(escape(s))` — он опирается на
+ * устаревший `escape`, и на многобайтовом UTF-8, то есть на любом имени не
+ * латиницей, ломается тихо. Теперь байты декодируются TextDecoder'ом, а
+ * base64url добивается до кратности четырём: JWT отдаётся без «=» на конце,
+ * и `atob` на такой строке местами падает.
+ */
 function decodeIdToken(idToken: string): { sub: string; email: string; name?: string } | null {
   try {
     const payload = idToken.split('.')[1];
-    const s = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(decodeURIComponent(escape(s)));
+    if (!payload) return null;
+    const b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+      .padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '=');
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch { return null; }
 }
 

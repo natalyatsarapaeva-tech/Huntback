@@ -33,6 +33,39 @@ export default {
   },
 };
 
+/**
+ * Возврат из Google — единственное место, куда браузер приходит по редиректу и
+ * где общее «Что-то пошло не так» дороже всего: человек только что дал
+ * согласие, дальше идти некуда, а подробности лежат в логах, которых он не
+ * видит. Поэтому здесь ошибка показывается страницей с технической причиной.
+ *
+ * Токены и код в текст не попадают: наружу идут только имя и сообщение
+ * исключения, обрезанные по длине.
+ */
+async function authCallbackDiagnosed(env: Env, url: URL): Promise<Response> {
+  try {
+    return await authCallback(env, url);
+  } catch (e) {
+    if (e instanceof ApiError) throw e;      // осмысленные ошибки уже объяснены
+    const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    console.error('auth callback failed', detail);
+    const esc = (t: string) => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
+    return new Response(
+      '<!doctype html><meta charset="utf-8"><title>Huntback — вход не завершён</title>'
+      + '<style>body{font:16px/1.6 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 1.5rem;color:#27333c}'
+      + 'h1{font-size:1.3rem;margin:0 0 .75rem}p{margin:0 0 1rem}'
+      + 'pre{background:#f0f2f4;padding:.75rem;border-radius:6px;white-space:pre-wrap;font-size:.85rem}'
+      + '.hint{color:#64798b;font-size:.94rem}</style>'
+      + '<h1>Google пройден, но вход не завершился</h1>'
+      + '<p>Согласие получено — сломалось уже на нашей стороне, при сохранении сессии.</p>'
+      + `<pre>${esc(detail.slice(0, 400))}</pre>`
+      + '<p class="hint">Пришлите этот текст — по нему причина видна однозначно. '
+      + 'Полный лог: панель Cloudflare → Compute (Workers) → huntback → Logs.</p>',
+      { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+  }
+}
+
 async function ctxFor(env: Env, userId: string): Promise<Ctx> {
   const [cfg, prompts] = await Promise.all([db.loadConfig(env), db.loadPromptOverrides(env)]);
   return { env, cfg, prompts, userId };
@@ -54,7 +87,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
 
   // ── Аутентификация (§8.1) ────────────────────────────────────────────────
   if (p === '/api/auth/start') return authStart(env, url);
-  if (p === '/api/auth/callback') return authCallback(env, url);
+  if (p === '/api/auth/callback') return authCallbackDiagnosed(env, url);
   if (p === '/api/auth/logout' && m === 'POST') return logout(env, request);
 
   const userId = await requireSession(env, request);
