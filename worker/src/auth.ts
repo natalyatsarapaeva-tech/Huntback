@@ -67,6 +67,29 @@ function googleConfig(env: Env): GoogleConfig {
       + '«Web application», а не «Desktop app».',
     );
   }
+  // TOKEN_ENC_KEY проверяем ЗДЕСЬ, хотя нужен он только в конце: им шифруется
+  // токен Google при записи в базу. Без проверки вход падал бы уже ПОСЛЕ того,
+  // как человек дал согласие в Google, — то есть в самом неудобном месте и без
+  // объяснения. Лучше отказаться на входе и сказать причину.
+  const encKeyRaw = String(env.TOKEN_ENC_KEY ?? '').trim();
+  if (!encKeyRaw) {
+    throw new SetupError(
+      'Не задан секрет воркера TOKEN_ENC_KEY.',
+      'Им шифруется токен доступа к вашему Google-диску перед записью в базу. '
+      + 'Нужны 32 случайных байта в base64 — как получить, написано в SETUP.md, шаг 8.',
+    );
+  }
+  let encKeyBytes = 0;
+  try { encKeyBytes = atob(encKeyRaw).length; } catch { encKeyBytes = -1; }
+  if (encKeyBytes !== 32) {
+    throw new SetupError(
+      'TOKEN_ENC_KEY задан, но это не 32 байта в base64.',
+      encKeyBytes === -1
+        ? 'Значение не похоже на base64. Сгенерируйте заново — SETUP.md, шаг 8.'
+        : `Получилось ${encKeyBytes} байт вместо 32. Сгенерируйте заново — SETUP.md, шаг 8.`,
+    );
+  }
+
   return { clientId, clientSecret, redirectUri: `${env.APP_ORIGIN}/api/auth/callback` };
 }
 

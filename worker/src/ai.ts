@@ -98,6 +98,18 @@ interface RawUsage { tokens_in: number; tokens_out: number; tool_calls: number; 
 async function once(
   env: Env, model: string, opts: CallOptions, remindSchema: boolean,
 ): Promise<{ text: string; usage: RawUsage }> {
+  // Незаданный ключ иначе уехал бы в OpenAI как «Bearer undefined», и человек
+  // увидел бы «Сервис модели ответил ошибкой» — ровно та непрозрачность, из-за
+  // которой вход через Google отлаживался вслепую. Говорим прямо.
+  if (!String(env.OPENAI_API_KEY ?? '').trim()) {
+    throw new ApiError(
+      'openai_key_missing',
+      'Не задан ключ OpenAI. Панель Cloudflare → Compute (Workers) → huntback → '
+      + 'Settings → Variables and Secrets → OPENAI_API_KEY, тип Secret.',
+      503,
+    );
+  }
+
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -124,7 +136,7 @@ async function once(
 
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${String(env.OPENAI_API_KEY).trim()}` },
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
