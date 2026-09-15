@@ -21,12 +21,12 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "huntback"
-database_id = "<создать: wrangler d1 create huntback>"
+database_id = "8780f340-02eb-412a-840b-516225d15e38"
 migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "KV"            # сессии, PKCE-state, access-токены Google, кэш
-id = "<создать: wrangler kv namespace create KV>"
+id = "ЖДЁТ: Namespace ID из панели Cloudflare, шаг 2"
 
 [vars]
 # ДОЛЖЕН совпадать с адресом, на котором открывается приложение: из него
