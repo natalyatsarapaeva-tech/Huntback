@@ -26,12 +26,12 @@ migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "KV"            # сессии, PKCE-state, access-токены Google, кэш
-id = "ЖДЁТ: Namespace ID из панели Cloudflare, шаг 2"
+id = "85a1403878964e39946665d2ee9a3d79"
 
 [vars]
 # ДОЛЖЕН совпадать с адресом, на котором открывается приложение: из него
 # собирается redirect_uri для Google. Пока нет своего домена — адрес workers.dev.
-APP_ORIGIN = "https://huntback.CHANGE-ME.workers.dev"
+APP_ORIGIN = "https://huntback.ntsarapaeva.workers.dev"
 
 # Секреты (wrangler secret put) — в репозиторий не попадают:
 #   OPENAI_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET TOKEN_ENC_KEY

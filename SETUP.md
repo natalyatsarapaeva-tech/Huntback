@@ -79,7 +79,7 @@ D1, а вход свой, а не Firebase Auth. Firestore нужен трём �
 **workers.dev** с вашим поддоменом (что-то вроде `ntsarapaeva.workers.dev` —
 тот же, на котором живёт `task-intake-worker`).
 
-Адрес приложения будет `https://huntback.ВАШ-ПОДДОМЕН.workers.dev`.
+Адрес приложения будет `https://huntback.ntsarapaeva.workers.dev`.
 
 **Пришлите мне ваш поддомен.** Я впишу адрес в настройки: из него собирается
 `redirect_uri` для входа через Google, и он должен совпасть посимвольно.
@@ -157,7 +157,7 @@ GitHub → репозиторий `huntback` → вкладка **Actions** → 
 **Как понять, что получилось:**
 
 - в Actions прогон **Deploy** зелёный;
-- `https://huntback.ВАШ-ПОДДОМЕН.workers.dev` открывается и показывает экран
+- `https://huntback.ntsarapaeva.workers.dev` открывается и показывает экран
   входа Huntback. Кнопка «Войти через Google» пока ведёт в ошибку — это
   ожидаемо, вход настраивается на шаге 7;
 - в панели Cloudflare → D1 → `huntback` → **Tables** девять таблиц: `analyses`,
@@ -185,7 +185,7 @@ GitHub → репозиторий `huntback` → вкладка **Actions** → 
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
    - тип **Web application**;
    - **Authorized redirect URIs** → ровно один:
-     `https://huntback.ВАШ-ПОДДОМЕН.workers.dev/api/auth/callback`
+     `https://huntback.ntsarapaeva.workers.dev/api/auth/callback`
    - сохраните. Появятся **Client ID** и **Client secret** — скопируйте оба.
 
 **Про режим Testing — знайте заранее (§5.2):** в этом режиме refresh-токены
