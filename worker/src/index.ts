@@ -17,7 +17,7 @@ import * as db from './store.ts';
 import { PROMPT_META, DEFAULT_PROMPTS } from './prompts.ts';
 import {
   type Ctx, runAudit, runAnalyse, runIngest, runResume, runLetter, runSwapTest,
-  runDiscover, discoverAngles, fetchJobPage, formatForCountry,
+  runDiscover, discoverAngles, DISCOVER_PASSES, fetchJobPage, formatForCountry,
 } from './operations.ts';
 
 export default {
@@ -451,7 +451,8 @@ async function executeRun(
     const opCtx = { env, cfg, prompts, userId };
     const profile = await db.getProfile(env, userId);
 
-    const angles = discoverAngles(opCtx, profile);
+    // Шаг прогресса — один проход одного направления (вакансии и сигналы).
+    const angles = discoverAngles(opCtx, profile).flatMap(a => DISCOVER_PASSES.map(p => `${a} · ${p}`));
     const estimateSec = estimateRunSeconds(angles.length, cfg.models.maxConcurrency);
     await send({ stage: 'plan', anglesTotal: angles.length, estimateSec });
     await setStage('Формирую поисковые запросы');
@@ -492,12 +493,11 @@ async function executeRun(
     await send({ stage: 'save', anglesDone: angles.length, anglesTotal: angles.length, estimateSec });
     await setStage('Сохраняю найденное');
 
-    // Разбивка по направлениям сохраняется в runs.error, когда что-то пошло
-    // не так: иначе через минуту «найдено 0» уже не объяснить.
+    // Разбивка по проходам (итог, запросы, источники) сохраняется в runs.error
+    // всегда: через минуту «одни гипотезы» или «найдено 0» иначе не объяснить.
     const notes = describeAngleOutcomes(outcomes);
-    const troubled = outcomes.some(o => o.error || o.returned !== o.kept) || !found.length;
     await env.DB.prepare('UPDATE runs SET state=?, stage=?, found=?, added=?, error=?, finished_at=? WHERE id=?')
-      .bind('done', 'Готово', found.length, added, troubled ? notes.join('\n') : null, nowIso(), runId).run();
+      .bind('done', 'Готово', found.length, added, notes.join('\n') || null, nowIso(), runId).run();
     await send({ stage: 'done', found: found.length, added, estimateSec, notes });
   } catch (e) {
     const message = e instanceof ApiError ? e.message

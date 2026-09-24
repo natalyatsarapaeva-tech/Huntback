@@ -56,6 +56,46 @@ export const DEFAULT_PRICES: Record<string, Price> = {
 /** Веб-поиск: $10 за 1000 вызовов плюс токены найденного (§10.1). */
 export const DEFAULT_WEB_SEARCH_PER_CALL = 0.01;
 
+// ── Где искать опубликованные вакансии ──────────────────────────────────────
+/**
+ * Домены проходa «вакансии» (фильтр allowed_domains у web_search, до 100
+ * доменов, поддомены включаются сами). Без фильтра общий веб-поиск тонет в
+ * новостях о раундах и реорганизациях, и находятся одни гипотезы.
+ *
+ * Состав: LinkedIn, ATS, на которых живут карьерные страницы компаний, и
+ * доски ЕС, Великобритании и Швейцарии с упором на Северную Европу. Конфиг,
+ * а не константа по месту: рынок сменится — поменяется список.
+ */
+export const DEFAULT_JOB_DOMAINS: string[] = [
+  // LinkedIn и агрегаторы
+  'linkedin.com', 'indeed.com', 'glassdoor.com', 'stepstone.com',
+  // ATS — карьерные страницы компаний
+  'greenhouse.io', 'lever.co', 'ashbyhq.com', 'teamtailor.com', 'workable.com',
+  'smartrecruiters.com', 'myworkdayjobs.com', 'successfactors.com', 'successfactors.eu',
+  'recruitee.com', 'personio.com', 'personio.de', 'jobylon.com', 'reachmee.com',
+  'varbi.com', 'hr-manager.net', 'webcruiter.no', 'emply.com',
+  'icims.com', 'oraclecloud.com', 'taleo.net', 'bamboohr.com', 'breezy.hr',
+  // Швеция
+  'arbetsformedlingen.se', 'jobbsafari.se', 'blocketjobb.se', 'academicwork.se',
+  // Норвегия
+  'finn.no', 'arbeidsplassen.nav.no', 'jobbnorge.no',
+  // Дания
+  'jobindex.dk', 'jobnet.dk', 'thehub.io',
+  // Финляндия
+  'duunitori.fi', 'tyomarkkinatori.fi', 'oikotie.fi',
+  // Исландия и Балтия
+  'alfred.is', 'cv.ee', 'cvonline.lt', 'cv.lv',
+  // Великобритания и Ирландия
+  'reed.co.uk', 'totaljobs.com', 'cv-library.co.uk', 'guardianjobs.co.uk', 'irishjobs.ie',
+  'exec-appointments.com',
+  // Швейцария
+  'jobs.ch', 'jobup.ch', 'jobscout24.ch',
+  // Германия, Австрия, Бенилюкс, Франция, Южная Европа, Польша
+  'stepstone.de', 'xing.com', 'karriere.at', 'nationalevacaturebank.nl', 'werk.nl',
+  'stepstone.be', 'apec.fr', 'welcometothejungle.com', 'infojobs.net', 'infojobs.it',
+  'pracuj.pl', 'eures.europa.eu',
+];
+
 // ── Пороги (§10.4a, §10.9, §10.10) ──────────────────────────────────────────
 export interface Thresholds {
   /** §10.4a, §10.10 — доля буллитов/фактов с числом. */
@@ -178,6 +218,8 @@ export interface HuntbackConfig {
   models: ModelsConfig;
   prices: Record<string, Price>;
   webSearchPerCall: number;
+  /** Где искать опубликованные вакансии (проход «вакансии» в Discover). */
+  jobDomains: string[];
   thresholds: Thresholds;
   stoplist: Stoplist;
 }
@@ -186,6 +228,7 @@ export const DEFAULT_CONFIG: HuntbackConfig = {
   models: DEFAULT_MODELS,
   prices: DEFAULT_PRICES,
   webSearchPerCall: DEFAULT_WEB_SEARCH_PER_CALL,
+  jobDomains: DEFAULT_JOB_DOMAINS,
   thresholds: DEFAULT_THRESHOLDS,
   stoplist: DEFAULT_STOPLIST,
 };
@@ -204,6 +247,8 @@ export function resolveConfig(overrides?: DeepPartial<HuntbackConfig> | null): H
       fallback: { ...DEFAULT_MODELS.fallback, ...((overrides.models as ModelsConfig)?.fallback || {}) } },
     prices: { ...DEFAULT_PRICES, ...(overrides.prices as object || {}) },
     webSearchPerCall: overrides.webSearchPerCall ?? DEFAULT_WEB_SEARCH_PER_CALL,
+    jobDomains: Array.isArray(overrides.jobDomains) && overrides.jobDomains.length
+      ? (overrides.jobDomains as string[]).slice(0, 100) : DEFAULT_JOB_DOMAINS,
     thresholds: { ...DEFAULT_THRESHOLDS, ...(overrides.thresholds as object || {}) },
     stoplist: {
       phrases: { ...DEFAULT_STOPLIST.phrases, ...(overrides.stoplist as Stoplist)?.phrases },
