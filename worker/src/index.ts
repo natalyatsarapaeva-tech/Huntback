@@ -9,7 +9,7 @@
 import {
   checkBudget, checkRunLimit, findDuplicate, reanalyseAfterProfileChange,
   computeScore, coverage, auditProfile, checkResume, checkLetter,
-  estimateRunSeconds, type RunEvent, type Demand, type Opportunity,
+  estimateRunSeconds, describeAngleOutcomes, type RunEvent, type Demand, type Opportunity,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
 import { authStart, authCallback, logout, requireSession } from './auth.ts';
@@ -328,7 +328,12 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       agg.count++; agg.cost += e.cost_usd;
       if (!e.ok) agg.failed++;
     }
-    return json({ ...checkBudget(log, cfg), byOperation, failed: log.filter(e => !e.ok).length });
+    // Последние причины неудач — прямо на странице расходов: «неудачных 2»
+    // без причины заставляет гадать (так и вышло с поиском мест).
+    const recentErrors = log.filter(e => !e.ok).slice(0, 5).map(e => ({
+      operation: e.operation, model: e.model, error: e.error ?? '', cost_usd: e.cost_usd, created_at: e.created_at,
+    }));
+    return json({ ...checkBudget(log, cfg), byOperation, failed: log.filter(e => !e.ok).length, recentErrors });
   }
 
   // ── Конфиг (§10.1 в редакции 1.2) ────────────────────────────────────────
@@ -457,7 +462,7 @@ async function executeRun(
     await send({ stage: 'search', anglesDone: 0, anglesTotal: angles.length, estimateSec });
     await setStage('Ищу вакансии и компании с сигналами');
 
-    const found = await runDiscover(
+    const { items: found, outcomes } = await runDiscover(
       opCtx, profile, existing.map(o => o.company), 8,
       (done, total) => { void send({ stage: 'search', anglesDone: done, anglesTotal: total, estimateSec }); },
     );
@@ -487,9 +492,13 @@ async function executeRun(
     await send({ stage: 'save', anglesDone: angles.length, anglesTotal: angles.length, estimateSec });
     await setStage('Сохраняю найденное');
 
-    await env.DB.prepare('UPDATE runs SET state=?, stage=?, found=?, added=?, finished_at=? WHERE id=?')
-      .bind('done', 'Готово', found.length, added, nowIso(), runId).run();
-    await send({ stage: 'done', found: found.length, added, estimateSec });
+    // Разбивка по направлениям сохраняется в runs.error, когда что-то пошло
+    // не так: иначе через минуту «найдено 0» уже не объяснить.
+    const notes = describeAngleOutcomes(outcomes);
+    const troubled = outcomes.some(o => o.error || o.returned !== o.kept) || !found.length;
+    await env.DB.prepare('UPDATE runs SET state=?, stage=?, found=?, added=?, error=?, finished_at=? WHERE id=?')
+      .bind('done', 'Готово', found.length, added, troubled ? notes.join('\n') : null, nowIso(), runId).run();
+    await send({ stage: 'done', found: found.length, added, estimateSec, notes });
   } catch (e) {
     const message = e instanceof ApiError ? e.message
       : 'Прогон не удался. Попробуйте ещё раз — кнопки разблокированы.';

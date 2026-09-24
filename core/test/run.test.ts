@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RUN_STAGES, estimateRunSeconds, runProgress, humanDuration,
+  RUN_STAGES, estimateRunSeconds, runProgress, humanDuration, describeAngleOutcomes,
 } from '../src/index.ts';
 
 test('веса этапов складываются в единицу', () => {
@@ -71,4 +71,17 @@ test('humanDuration говорит по-человечески', () => {
   assert.equal(humanDuration(60), 'около минуты');
   assert.match(humanDuration(150), /около 3 минут|около 2 минут/);
   assert.match(humanDuration(0), /секунд/);
+});
+
+test('итог направлений: ошибка, пустой ответ и отброшенное названы по отдельности', () => {
+  const notes = describeAngleOutcomes([
+    { angle: 'COO в логистике', returned: 0, kept: 0, error: 'Ответ модели обрезан' },
+    { angle: 'VP Operations', returned: 0, kept: 0 },
+    { angle: 'Head of Supply Chain', returned: 4, kept: 1 },
+    { angle: 'Директор по производству', returned: 3, kept: 3 },
+  ]);
+  assert.match(notes[0], /«COO в логистике»: ошибка — Ответ модели обрезан/);
+  assert.match(notes[1], /не нашла ни одного/);
+  assert.match(notes[2], /вернула 4, отброшено 3/);
+  assert.equal(notes[3], '«Директор по производству»: найдено 3');
 });

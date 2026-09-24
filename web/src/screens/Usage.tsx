@@ -79,9 +79,23 @@ export function Usage({ data }: { data: UsageSummary | null }) {
           </table>
           {data.failed > 0 && (
             <p className="small muted mt-12">
-              {data.failed} вызовов завершились ошибкой. Они не стоили денег, но и результата не дали —
-              поэтому показаны здесь, а не спрятаны.
+              {data.failed} вызовов завершились ошибкой и не дали результата. Если модель успела
+              поработать, токены всё равно оплачены — это видно в столбце стоимости.
             </p>
+          )}
+          {!!data.recentErrors?.length && (
+            <div className="mt-12">
+              <div className="section-label">Последние ошибки</div>
+              <ul className="small" style={{ margin: '6px 0 0', paddingLeft: 18, overflowWrap: 'anywhere' }}>
+                {data.recentErrors.map((e, i) => (
+                  <li key={i} className="mt-8">
+                    <b>{OP_LABEL[e.operation] ?? e.operation}</b>
+                    <span className="muted"> · {e.model} · {new Date(e.created_at).toLocaleString('ru-RU')} · ${e.cost_usd.toFixed(3)}</span>
+                    <div>{e.error || 'причина не записана (вызов до этого обновления)'}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       </Card>

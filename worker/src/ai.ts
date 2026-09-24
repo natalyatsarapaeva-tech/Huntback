@@ -53,8 +53,21 @@ export async function callModel<T>(
 
   for (let attempt = 0; ; attempt++) {
     try {
-      const { text, usage } = await once(env, model, opts, /* remindSchema */ false);
-      let data = parseJsonObject<T>(text);
+      const first = await once(env, model, opts, /* remindSchema */ false);
+      const usage = { ...first.usage };
+      let data = parseJsonObject<T>(first.text);
+
+      // Ответ обрезан лимитом токенов: повтор с тем же лимитом обрежется так же
+      // и стоит столько же. Не повторяем, а называем причину.
+      if (!Object.keys(data).length && first.incomplete) {
+        const why = `incomplete: ${first.incomplete} (max_output_tokens=${opts.maxOutputTokens ?? DEFAULT_MAX_OUT}, `
+          + `out=${usage.tokens_out}, reasoning=${usage.reasoning_out ?? 0})`;
+        console.error('model_truncated', opts.operation, model, why);
+        await logUsage(env, userId, opts.operation, model, usage, cfg, false, why);
+        throw new ApiError('model_truncated',
+          `Ответ модели не завершён (${model}, ${why}).`
+          + (first.incomplete === 'max_output_tokens' ? ' Нужно поднять лимит ответа для этой операции.' : ''), 502);
+      }
 
       // Ровно один повтор при невалидном JSON, с уточнением схемы (§16).
       if (!Object.keys(data).length) {
@@ -62,9 +75,14 @@ export async function callModel<T>(
         data = parseJsonObject<T>(retry.text);
         usage.tokens_in += retry.usage.tokens_in;
         usage.tokens_out += retry.usage.tokens_out;
+        usage.tool_calls += retry.usage.tool_calls;
         if (!Object.keys(data).length) {
-          await logUsage(env, userId, opts.operation, model, usage, cfg, false, 'invalid_json');
-          throw new ApiError('model_invalid_json', 'Модель вернула ответ, который не удалось разобрать. Попробуйте ещё раз.', 502);
+          // Сам текст не пишем (§14), только его форму — этого хватает для диагноза.
+          const why = `invalid_json: ${describeShape(first)}; retry ${describeShape(retry)}`;
+          console.error('model_invalid_json', opts.operation, model, why);
+          await logUsage(env, userId, opts.operation, model, usage, cfg, false, why);
+          throw new ApiError('model_invalid_json',
+            `Модель вернула ответ, который не удалось разобрать (${model}, ${why}).`, 502);
         }
       }
 
@@ -72,6 +90,7 @@ export async function callModel<T>(
       return { data, model, degraded, cost_usd: cost };
     } catch (e) {
       const transient = e instanceof TransientError;
+      if (transient) console.error('openai_transient', opts.operation, model, `attempt ${attempt + 1}`, e.message);
       if (!transient) {
         // Отказ OpenAI тоже попадает в usage_log (§4.3.2) — с причиной.
         if (e instanceof ApiError && e.code === 'openai_error') {
@@ -94,18 +113,38 @@ export async function callModel<T>(
       }
       await logUsage(env, userId, opts.operation, model,
         { tokens_in: 0, tokens_out: 0, tool_calls: 0 }, cfg, false, e.message);
-      throw new ApiError('openai_rate_limited', 'Модель сейчас перегружена. Попробуйте через минуту.', 503, 60);
+      throw new ApiError('openai_rate_limited',
+        `Модель не ответила после всех попыток (${model}: ${e.message}). Попробуйте через минуту.`, 503, 60);
     }
   }
 }
 
 class TransientError extends Error {}
 
-interface RawUsage { tokens_in: number; tokens_out: number; tool_calls: number; cached_in?: number }
+const DEFAULT_MAX_OUT = 4000;
+
+interface RawUsage {
+  tokens_in: number; tokens_out: number; tool_calls: number; cached_in?: number; reasoning_out?: number;
+}
+
+interface OnceResult {
+  text: string;
+  usage: RawUsage;
+  /** Причина из incomplete_details, если ответ не завершён (обычно max_output_tokens). */
+  incomplete: string | null;
+  status: string;
+  messages: number;
+}
+
+/** Форма ответа без содержимого: статус, число сообщений, длина текста. */
+function describeShape(r: OnceResult): string {
+  return `status=${r.status}${r.incomplete ? `/${r.incomplete}` : ''}, messages=${r.messages}, `
+    + `text=${r.text.length} chars, out=${r.usage.tokens_out}, reasoning=${r.usage.reasoning_out ?? 0}`;
+}
 
 async function once(
   env: Env, model: string, opts: CallOptions, remindSchema: boolean,
-): Promise<{ text: string; usage: RawUsage }> {
+): Promise<OnceResult> {
   // Незаданный ключ иначе уехал бы в OpenAI как «Bearer undefined», и человек
   // увидел бы «Сервис модели ответил ошибкой» — ровно та непрозрачность, из-за
   // которой вход через Google отлаживался вслепую. Говорим прямо.
@@ -136,7 +175,7 @@ async function once(
       text: {
         format: { type: 'json_schema', name: opts.schema.name, schema: opts.schema.schema, strict: true },
       },
-      max_output_tokens: opts.maxOutputTokens ?? 4000,
+      max_output_tokens: opts.maxOutputTokens ?? DEFAULT_MAX_OUT,
       store: false,
     };
     // Рассуждающие модели (gpt-5.x) отвечают на temperature ошибкой 400 —
@@ -165,20 +204,35 @@ async function once(
       throw new ApiError('openai_error', `Сервис модели ответил ошибкой (${model}): ${reason}`, 502);
     }
     const data = await res.json() as {
+      status?: string;
+      incomplete_details?: { reason?: string } | null;
       output_text?: string;
-      output?: { content?: { text?: string }[] }[];
-      usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
+      output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+      usage?: {
+        input_tokens?: number; output_tokens?: number;
+        input_tokens_details?: { cached_tokens?: number };
+        output_tokens_details?: { reasoning_tokens?: number };
+      };
     };
+    // Ответ — ПОСЛЕДНЕЕ сообщение. С веб-поиском в output бывает несколько
+    // сообщений, и склейка их текстов давала «{…}{…}», который не разбирается.
+    const messages = (data.output ?? []).filter(o => o.type === 'message');
+    const last = messages[messages.length - 1];
     const text = data.output_text
-      ?? data.output?.flatMap(o => o.content ?? []).map(c => c.text ?? '').join('')
-      ?? '';
+      ?? (last?.content ?? []).filter(c => c.type === 'output_text' || c.type === undefined)
+        .map(c => c.text ?? '').join('');
     return {
       text,
+      status: data.status ?? 'unknown',
+      incomplete: data.status === 'incomplete' ? (data.incomplete_details?.reason ?? 'unknown') : null,
+      messages: messages.length,
       usage: {
         tokens_in: data.usage?.input_tokens ?? 0,
         tokens_out: data.usage?.output_tokens ?? 0,
         cached_in: data.usage?.input_tokens_details?.cached_tokens ?? 0,
-        tool_calls: opts.webSearch ? 1 : 0,
+        reasoning_out: data.usage?.output_tokens_details?.reasoning_tokens ?? 0,
+        tool_calls: (data.output ?? []).filter(o => o.type === 'web_search_call').length
+          || (opts.webSearch ? 1 : 0),
       },
     };
   } catch (e) {

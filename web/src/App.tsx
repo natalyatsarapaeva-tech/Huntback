@@ -179,11 +179,17 @@ export function App() {
         if (e.stage === 'done') {
           clearInterval(tick);
           if (e.error) { setStatus({ kind: 'error', text: e.error }); return; }
+          if (!e.found) {
+            setStatus({ kind: 'error', text: 'Не найдено ни одного места. По направлениям:', lines: e.notes });
+            return;
+          }
           setStatus({
             kind: 'ok',
             text: e.added
               ? `Найдено ${e.found}, добавлено новых ${e.added}`
               : `Найдено ${e.found}, новых среди них нет`,
+            // Разбивку показываем, только если что-то потерялось по дороге.
+            lines: e.notes?.some(n => !/: найдено \d+$/.test(n)) ? e.notes : undefined,
           });
           void refreshList(api);
           return;
