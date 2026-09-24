@@ -15,7 +15,8 @@
 //   §4.3.2 неудачные вызовы тоже пишутся в usage_log
 
 import {
-  type HuntbackConfig, type Operation, callCost, degradeModel, modelFor, parseJsonObject,
+  type HuntbackConfig, type Operation, acceptsTemperature, callCost, degradeModel,
+  describeOpenAIError, modelFor, parseJsonObject, parseOpenAIError,
 } from '@huntback/core';
 import { type Env, ApiError, nowIso, uid } from './env.ts';
 
@@ -71,7 +72,14 @@ export async function callModel<T>(
       return { data, model, degraded, cost_usd: cost };
     } catch (e) {
       const transient = e instanceof TransientError;
-      if (!transient) throw e;
+      if (!transient) {
+        // Отказ OpenAI тоже попадает в usage_log (§4.3.2) — с причиной.
+        if (e instanceof ApiError && e.code === 'openai_error') {
+          await logUsage(env, userId, opts.operation, model,
+            { tokens_in: 0, tokens_out: 0, tool_calls: 0 }, cfg, false, e.message);
+        }
+        throw e;
+      }
 
       if (attempt < BACKOFF_MS.length) {
         await sleep(BACKOFF_MS[attempt]);
@@ -128,10 +136,12 @@ async function once(
       text: {
         format: { type: 'json_schema', name: opts.schema.name, schema: opts.schema.schema, strict: true },
       },
-      temperature: opts.temperature ?? 0.2,
       max_output_tokens: opts.maxOutputTokens ?? 4000,
       store: false,
     };
+    // Рассуждающие модели (gpt-5.x) отвечают на temperature ошибкой 400 —
+    // тогда падал бы каждый вызов. Отправляем только тем, кто его принимает.
+    if (acceptsTemperature(model)) body.temperature = opts.temperature ?? 0.2;
     if (opts.webSearch) body.tools = [{ type: 'web_search' }];
 
     const res = await fetch('https://api.openai.com/v1/responses', {
@@ -145,10 +155,14 @@ async function once(
       throw new TransientError(`openai_${res.status}`);
     }
     if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new ApiError('openai_error', 'Сервис модели ответил ошибкой', 502, undefined);
-      // detail намеренно не попадает пользователю и не логируется целиком:
-      // в нём может оказаться кусок промпта, то есть резюме (§14 «Логи»).
+      // Раньше причина отбрасывалась, и неверное имя модели, неподдержанный
+      // параметр и нехватка доступа выглядели одинаково. Теперь в лог и на
+      // экран идут код, параметр и короткое сообщение OpenAI — но не тело
+      // целиком: в нём может оказаться кусок промпта, то есть резюме (§14).
+      const info = parseOpenAIError(res.status, await res.text().catch(() => ''));
+      const reason = describeOpenAIError(info);
+      console.error('openai_error', model, reason);
+      throw new ApiError('openai_error', `Сервис модели ответил ошибкой (${model}): ${reason}`, 502);
     }
     const data = await res.json() as {
       output_text?: string;

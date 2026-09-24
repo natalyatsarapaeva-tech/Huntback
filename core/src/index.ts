@@ -14,3 +14,4 @@ export * from './audit.ts';
 export * from './budget.ts';
 export * from './run.ts';
 export * from './sanitize.ts';
+export * from './openai.ts';
