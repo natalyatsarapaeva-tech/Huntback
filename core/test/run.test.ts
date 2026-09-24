@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RUN_STAGES, estimateRunSeconds, runProgress, humanDuration, describeAngleOutcomes,
+  RUN_STAGES, estimateRunSeconds, runProgress, humanDuration, describeAngleOutcomes, searchTrace, DEFAULT_JOB_DOMAINS,
 } from '../src/index.ts';
 
 test('веса этапов складываются в единицу', () => {
@@ -84,4 +84,36 @@ test('итог направлений: ошибка, пустой ответ и 
   assert.match(notes[1], /не нашла ни одного/);
   assert.match(notes[2], /вернула 4, отброшено 3/);
   assert.equal(notes[3], '«Директор по производству»: найдено 3');
+});
+
+test('след поиска: запросы и домены источников, частые первыми; мусор не ломает разбор', () => {
+  const t = searchTrace([
+    { type: 'reasoning', summary: [] },
+    { type: 'web_search_call', action: { type: 'search', query: 'COO jobs Stockholm',
+      sources: [{ type: 'url', url: 'https://www.linkedin.com/jobs/view/1' },
+        { type: 'url', url: 'https://jobs.teamtailor.com/x' }, { type: 'url', url: 'https://se.linkedin.com/jobs/view/2' }] } },
+    { type: 'web_search_call', action: { type: 'open_page', url: 'https://www.linkedin.com/jobs/view/3' } },
+    { type: 'message', content: [{ type: 'output_text', text: '{}', annotations: [{ url: 'https://jobs.teamtailor.com/y' }] }] },
+    null, 'x',
+  ]);
+  assert.deepEqual(t.queries, ['COO jobs Stockholm']);
+  assert.deepEqual(t.domains.slice(0, 2), ['linkedin.com', 'jobs.teamtailor.com']);
+  assert.ok(t.domains.includes('se.linkedin.com'));
+  assert.deepEqual(searchTrace(undefined), { queries: [], domains: [] });
+});
+
+test('итог прохода: вакансии и гипотезы раздельно, запросы и источники видны', () => {
+  const [line] = describeAngleOutcomes([{
+    angle: 'COO', pass: 'vacancies', returned: 3, kept: 3, vacancies: 3, hypotheses: 0,
+    queries: ['COO jobs Oslo'], domains: ['finn.no', 'linkedin.com'],
+  }]);
+  assert.equal(line, '«COO» · вакансии: найдено 3 (вакансий 3, гипотез 0). запросы: «COO jobs Oslo»; источники: finn.no, linkedin.com');
+  const [none] = describeAngleOutcomes([{ angle: 'COO', pass: 'vacancies', returned: 0, kept: 0, queries: [] }]);
+  assert.match(none, /не нашла ни одного места\. источников нет/);
+});
+
+test('домены вакансий: в пределах лимита web_search и без схемы в адресе', () => {
+  assert.ok(DEFAULT_JOB_DOMAINS.length <= 100);
+  for (const d of DEFAULT_JOB_DOMAINS) assert.doesNotMatch(d, /^https?:|\//, d);
+  assert.equal(new Set(DEFAULT_JOB_DOMAINS).size, DEFAULT_JOB_DOMAINS.length, 'без повторов');
 });

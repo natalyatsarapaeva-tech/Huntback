@@ -374,6 +374,14 @@ export function discoverAngles(ctx: Ctx, profile: Profile): string[] {
   return splitPerimeter(profile.perimeter, ctx.cfg.models.maxConcurrency * 2);
 }
 
+/**
+ * Два прохода на направление. В одном общем веб-поиске новости о раундах и
+ * реорганизациях забивали выдачу, и находились одни гипотезы. Теперь:
+ *   vacancies — веб-поиск только по сайтам вакансий и ATS (cfg.jobDomains);
+ *   signals   — прежний поиск гипотез по датированным сигналам.
+ */
+export const DISCOVER_PASSES = ['vacancies', 'signals'] as const;
+
 export async function runDiscover(
   ctx: Ctx, profile: Profile, known: string[], count = 8,
   onAngleDone?: (done: number, total: number) => void,
@@ -382,35 +390,44 @@ export async function runDiscover(
   // последовательный обход шести веб-запросов в него не укладывается (§4.3.3).
   const angles = discoverAngles(ctx, profile);
   const perAngle = Math.ceil(count / angles.length) + 1;
+  const tasks = angles.flatMap(angle => DISCOVER_PASSES.map(pass => ({ angle, pass })));
+  const today = new Date().toISOString().slice(0, 10);
   let done = 0;
   const outcomes: AngleOutcome[] = [];
-  const batches = await mapWithConcurrency(angles, ctx.cfg.models.maxConcurrency, async angle => {
+  const batches = await mapWithConcurrency(tasks, ctx.cfg.models.maxConcurrency, async ({ angle, pass }) => {
     try {
-      const { data } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
+      const tokens = {
+        PERIMETER: angle, GEO: profile.geo, EXCLUDE: profile.exclude,
+        KNOWN: known.join(', '), BREADTH: profile.breadth, COUNT: perAngle, TODAY: today,
+      };
+      const { data, trace } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
         operation: 'discover',
         prefix: 'Кандидат ищет работу. Профиль: ' + profile.resume_text.slice(0, 6000),
-        instruction: fillPrompt(getPrompt(ctx.prompts, 'discover'), {
-          PERIMETER: angle, GEO: profile.geo, EXCLUDE: profile.exclude,
-          KNOWN: known.join(', '), BREADTH: profile.breadth, COUNT: perAngle,
-        }),
+        instruction: fillPrompt(getPrompt(ctx.prompts, pass === 'vacancies' ? 'discover_vacancies' : 'discover'), tokens),
         // Рассуждение и разбор найденного у рассуждающей модели съедают лимит
         // ответа: при 4000 JSON обрезался, и прогон находил ноль. Платится
         // только использованное, так что запас ничего не стоит.
         schema: DISCOVER_SCHEMA, temperature: 0.5, maxOutputTokens: 16000, webSearch: true,
+        searchDomains: pass === 'vacancies' ? ctx.cfg.jobDomains : undefined,
       });
       const raw = data.items ?? [];
       const kept = raw.map(sanitizeDiscoverItem).filter(Boolean) as DiscoverItem[];
-      outcomes.push({ angle, returned: raw.length, kept: kept.length });
+      outcomes.push({
+        angle, pass, returned: raw.length, kept: kept.length,
+        vacancies: kept.filter(k => k.kind === 'vacancy').length,
+        hypotheses: kept.filter(k => k.kind === 'hypothesis').length,
+        queries: trace.queries, domains: trace.domains,
+      });
       return kept;
     } catch (e) {
-      // Один неудачный угол не роняет прогон целиком — но причина не теряется:
+      // Один неудачный проход не роняет прогон целиком — но причина не теряется:
       // она уходит в итог прогона, иначе «ноль найдено» неотличимо от поломки.
-      outcomes.push({ angle, returned: 0, kept: 0, error: e instanceof Error ? e.message : String(e) });
+      outcomes.push({ angle, pass, returned: 0, kept: 0, error: e instanceof Error ? e.message : String(e) });
       return [];
     } finally {
       // Сообщаем о завершении и удачного, и неудачного направления: полоса
       // прогресса не должна останавливаться из-за того, что один запрос упал.
-      onAngleDone?.(++done, angles.length);
+      onAngleDone?.(++done, tasks.length);
     }
   });
   return { items: batches.flat(), outcomes };

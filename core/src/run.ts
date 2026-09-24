@@ -155,9 +155,17 @@ export interface RunEvent {
   notes?: string[];
 }
 
-/** Итог одного направления поиска. */
+/** Итог одного прохода одного направления поиска. */
 export interface AngleOutcome {
   angle: string;
+  /** vacancies — только сайты вакансий и ATS; signals — гипотезы по сигналам. */
+  pass?: 'vacancies' | 'signals';
+  /** Из сохранённого: сколько вакансий и сколько гипотез. */
+  vacancies?: number;
+  hypotheses?: number;
+  /** Что модель искала и откуда пришли результаты — без этого не понять «одни гипотезы». */
+  queries?: string[];
+  domains?: string[];
   /** Сколько мест вернула модель. */
   returned: number;
   /** Сколько из них прошло санитайз (гипотеза без даты и ссылки отбрасывается, §10.3). */
@@ -171,12 +179,59 @@ export interface AngleOutcome {
  */
 export function describeAngleOutcomes(outcomes: AngleOutcome[]): string[] {
   return outcomes.map(o => {
-    const name = `«${o.angle.length > 60 ? o.angle.slice(0, 60) + '…' : o.angle}»`;
-    if (o.error) return `${name}: ошибка — ${o.error}`;
-    if (!o.returned) return `${name}: модель не нашла ни одного места`;
-    const dropped = o.returned - o.kept;
-    if (!dropped) return `${name}: найдено ${o.kept}`;
-    return `${name}: модель вернула ${o.returned}, отброшено ${dropped} `
-      + '(гипотеза без датированного сигнала и ссылки или без компании и роли)';
+    const pass = o.pass === 'vacancies' ? ' · вакансии' : o.pass === 'signals' ? ' · сигналы' : '';
+    const name = `«${o.angle.length > 60 ? o.angle.slice(0, 60) + '…' : o.angle}»${pass}`;
+    return `${name}: ${outcomeText(o)}${traceText(o)}`;
   });
+}
+
+function outcomeText(o: AngleOutcome): string {
+  if (o.error) return `ошибка — ${o.error}`;
+  if (!o.returned) return 'модель не нашла ни одного места';
+  const split = o.vacancies != null && o.hypotheses != null
+    ? ` (вакансий ${o.vacancies}, гипотез ${o.hypotheses})` : '';
+  const dropped = o.returned - o.kept;
+  if (!dropped) return `найдено ${o.kept}${split}`;
+  return `модель вернула ${o.returned}, отброшено ${dropped} `
+    + `(гипотеза без датированного сигнала и ссылки или без компании и роли)${split}`;
+}
+
+function traceText(o: AngleOutcome): string {
+  const parts: string[] = [];
+  if (o.queries?.length) parts.push(`запросы: ${o.queries.slice(0, 4).map(q => `«${q}»`).join(', ')}`);
+  if (o.domains?.length) parts.push(`источники: ${o.domains.slice(0, 6).join(', ')}`);
+  else if (o.queries) parts.push('источников нет');
+  return parts.length ? `. ${parts.join('; ')}` : '';
+}
+
+/** Запросы и домены источников из output ответа Responses API — без текста страниц. */
+export function searchTrace(output: unknown): { queries: string[]; domains: string[] } {
+  const queries: string[] = [];
+  const domains = new Map<string, number>();
+  const addUrl = (u: unknown) => {
+    if (typeof u !== 'string') return;
+    try {
+      const host = new URL(u).hostname.replace(/^www\./, '');
+      domains.set(host, (domains.get(host) ?? 0) + 1);
+    } catch { /* не URL */ }
+  };
+  for (const item of Array.isArray(output) ? output : []) {
+    const it = (item ?? {}) as { type?: string; action?: Record<string, unknown>; content?: unknown[] };
+    if (it.type === 'web_search_call' && it.action) {
+      const a = it.action;
+      if (typeof a.query === 'string' && a.query.trim()) queries.push(a.query.trim());
+      if (Array.isArray(a.queries)) for (const q of a.queries) if (typeof q === 'string') queries.push(q);
+      addUrl(a.url);
+      if (Array.isArray(a.sources)) for (const s of a.sources) addUrl((s as { url?: unknown })?.url);
+    }
+    if (it.type === 'message' && Array.isArray(it.content)) {
+      for (const c of it.content) {
+        const ann = (c as { annotations?: { url?: unknown }[] })?.annotations;
+        if (Array.isArray(ann)) for (const x of ann) addUrl(x?.url);
+      }
+    }
+  }
+  // Чаще встречающиеся источники — первыми.
+  const sorted = [...domains.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
+  return { queries: [...new Set(queries)], domains: sorted };
 }

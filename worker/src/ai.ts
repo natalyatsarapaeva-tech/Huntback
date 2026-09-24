@@ -16,7 +16,7 @@
 
 import {
   type HuntbackConfig, type Operation, acceptsTemperature, callCost, degradeModel,
-  describeOpenAIError, modelFor, parseJsonObject, parseOpenAIError,
+  describeOpenAIError, modelFor, parseJsonObject, parseOpenAIError, searchTrace,
 } from '@huntback/core';
 import { type Env, ApiError, nowIso, uid } from './env.ts';
 
@@ -33,6 +33,8 @@ export interface CallOptions {
   temperature?: number;
   maxOutputTokens?: number;
   webSearch?: boolean;
+  /** Ограничить веб-поиск этими доменами (filters.allowed_domains, до 100). */
+  searchDomains?: string[];
 }
 
 export interface CallResult<T> {
@@ -41,6 +43,8 @@ export interface CallResult<T> {
   /** Пришлось деградировать на младшую модель — видно на карточке (§13.2). */
   degraded: boolean;
   cost_usd: number;
+  /** Что искал веб-поиск и откуда пришли результаты (только при webSearch). */
+  trace: { queries: string[]; domains: string[] };
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -87,7 +91,7 @@ export async function callModel<T>(
       }
 
       const cost = await logUsage(env, userId, opts.operation, model, usage, cfg, true);
-      return { data, model, degraded, cost_usd: cost };
+      return { data, model, degraded, cost_usd: cost, trace: first.trace };
     } catch (e) {
       const transient = e instanceof TransientError;
       if (transient) console.error('openai_transient', opts.operation, model, `attempt ${attempt + 1}`, e.message);
@@ -134,6 +138,7 @@ interface OnceResult {
   incomplete: string | null;
   status: string;
   messages: number;
+  trace: { queries: string[]; domains: string[] };
 }
 
 /** Форма ответа без содержимого: статус, число сообщений, длина текста. */
@@ -181,7 +186,16 @@ async function once(
     // Рассуждающие модели (gpt-5.x) отвечают на temperature ошибкой 400 —
     // тогда падал бы каждый вызов. Отправляем только тем, кто его принимает.
     if (acceptsTemperature(model)) body.temperature = opts.temperature ?? 0.2;
-    if (opts.webSearch) body.tools = [{ type: 'web_search' }];
+    if (opts.webSearch) {
+      body.tools = [{
+        type: 'web_search',
+        ...(opts.searchDomains?.length
+          ? { filters: { allowed_domains: opts.searchDomains.slice(0, 100) } } : {}),
+      }];
+      // Полный список просмотренных адресов, а не только процитированных:
+      // по нему видно, заходил ли поиск на сайты вакансий вообще.
+      body.include = ['web_search_call.action.sources'];
+    }
 
     const res = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -224,6 +238,7 @@ async function once(
     return {
       text,
       status: data.status ?? 'unknown',
+      trace: searchTrace(data.output),
       incomplete: data.status === 'incomplete' ? (data.incomplete_details?.reason ?? 'unknown') : null,
       messages: messages.length,
       usage: {
