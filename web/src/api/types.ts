@@ -38,6 +38,7 @@ export interface OpportunityDetail {
 export interface UsageSummary extends BudgetStatus {
   byOperation: Record<string, { count: number; cost: number; failed: number }>;
   failed: number;
+  recentErrors?: { operation: string; model: string; error: string; cost_usd: number; created_at: string }[];
 }
 
 export interface ParsedJob {

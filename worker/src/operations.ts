@@ -3,7 +3,7 @@
 
 import {
   type Analysis, type Fact, type Opportunity, type Profile, type HuntbackConfig,
-  type Demand, type CheckContext, type FormatVariant,
+  type Demand, type CheckContext, type FormatVariant, type AngleOutcome, type DiscoverItem,
   sanitizeAnalysis, sanitizeFact, sanitizeIngest, sanitizeResume, sanitizeLetter,
   sanitizeDiscoverItem, computeScore, reconcileBlockers, demoteUnverified,
   sourceHintFound, auditProfile, checkResume, checkLetter, applySwapResult, parseCefr,
@@ -383,6 +383,7 @@ export async function runDiscover(
   const angles = discoverAngles(ctx, profile);
   const perAngle = Math.ceil(count / angles.length) + 1;
   let done = 0;
+  const outcomes: AngleOutcome[] = [];
   const batches = await mapWithConcurrency(angles, ctx.cfg.models.maxConcurrency, async angle => {
     try {
       const { data } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
@@ -392,16 +393,25 @@ export async function runDiscover(
           PERIMETER: angle, GEO: profile.geo, EXCLUDE: profile.exclude,
           KNOWN: known.join(', '), BREADTH: profile.breadth, COUNT: perAngle,
         }),
-        schema: DISCOVER_SCHEMA, temperature: 0.5, maxOutputTokens: 4000, webSearch: true,
+        // Рассуждение и разбор найденного у рассуждающей модели съедают лимит
+        // ответа: при 4000 JSON обрезался, и прогон находил ноль. Платится
+        // только использованное, так что запас ничего не стоит.
+        schema: DISCOVER_SCHEMA, temperature: 0.5, maxOutputTokens: 16000, webSearch: true,
       });
-      return data.items ?? [];
-    } catch {
-      return [];    // один неудачный угол не роняет прогон целиком
+      const raw = data.items ?? [];
+      const kept = raw.map(sanitizeDiscoverItem).filter(Boolean) as DiscoverItem[];
+      outcomes.push({ angle, returned: raw.length, kept: kept.length });
+      return kept;
+    } catch (e) {
+      // Один неудачный угол не роняет прогон целиком — но причина не теряется:
+      // она уходит в итог прогона, иначе «ноль найдено» неотличимо от поломки.
+      outcomes.push({ angle, returned: 0, kept: 0, error: e instanceof Error ? e.message : String(e) });
+      return [];
     } finally {
       // Сообщаем о завершении и удачного, и неудачного направления: полоса
       // прогресса не должна останавливаться из-за того, что один запрос упал.
       onAngleDone?.(++done, angles.length);
     }
   });
-  return batches.flat().map(sanitizeDiscoverItem).filter(Boolean);
+  return { items: batches.flat(), outcomes };
 }

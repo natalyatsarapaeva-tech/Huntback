@@ -280,7 +280,7 @@ export async function usageThisMonth(env: Env, userId: string): Promise<UsageEnt
     operation: r.operation as UsageEntry['operation'], model: String(r.model),
     tokens_in: Number(r.tokens_in ?? 0), tokens_out: Number(r.tokens_out ?? 0),
     tool_calls: Number(r.tool_calls ?? 0), cost_usd: Number(r.cost_usd ?? 0),
-    ok: !!r.ok, created_at: String(r.created_at),
+    ok: !!r.ok, error: r.error == null ? null : String(r.error), created_at: String(r.created_at),
   }));
 }
 

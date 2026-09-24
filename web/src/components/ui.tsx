@@ -39,8 +39,8 @@ export function KindChip({ kind }: { kind: 'vacancy' | 'hypothesis' }) {
 export type Status =
   | { kind: 'idle' }
   | { kind: 'busy'; text: string; progress?: RunProgress | null }
-  | { kind: 'ok'; text: string }
-  | { kind: 'error'; text: string }
+  | { kind: 'ok'; text: string; lines?: string[] }
+  | { kind: 'error'; text: string; lines?: string[] }
   | { kind: 'info'; text: string };
 
 export function StatusBar({ status, elapsed, onDismiss }:
@@ -60,6 +60,12 @@ export function StatusBar({ status, elapsed, onDismiss }:
           )}
         </span>
         {progress && <RunBar p={progress} />}
+        {/* Разбивка по направлениям поиска: без неё «найдено 0» не объяснить. */}
+        {'lines' in status && status.lines?.length ? (
+          <ul className="small mt-8" style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+            {status.lines.map((l, i) => <li key={i}>{l}</li>)}
+          </ul>
+        ) : null}
       </div>
       {status.kind !== 'busy' && (
         <button onClick={onDismiss} aria-label="Закрыть сообщение">✕</button>

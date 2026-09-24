@@ -220,5 +220,7 @@ export interface UsageEntry {
   tool_calls: number;
   cost_usd: number;
   ok: boolean;              // §4.3.2 — неудачные вызовы тоже пишутся
+  /** Причина неудачи: код OpenAI, обрезка ответа, таймаут. */
+  error?: string | null;
   created_at: string;
 }

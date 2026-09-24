@@ -151,4 +151,32 @@ export interface RunEvent {
   found?: number;
   added?: number;
   error?: string;
+  /** Что случилось с каждым направлением — видно, почему найдено мало или ноль. */
+  notes?: string[];
+}
+
+/** Итог одного направления поиска. */
+export interface AngleOutcome {
+  angle: string;
+  /** Сколько мест вернула модель. */
+  returned: number;
+  /** Сколько из них прошло санитайз (гипотеза без даты и ссылки отбрасывается, §10.3). */
+  kept: number;
+  error?: string;
+}
+
+/**
+ * Строки для экрана: по одной на направление. Без них прогон с нулём
+ * неотличим от прогона, где упал каждый запрос, — а это разные поломки.
+ */
+export function describeAngleOutcomes(outcomes: AngleOutcome[]): string[] {
+  return outcomes.map(o => {
+    const name = `«${o.angle.length > 60 ? o.angle.slice(0, 60) + '…' : o.angle}»`;
+    if (o.error) return `${name}: ошибка — ${o.error}`;
+    if (!o.returned) return `${name}: модель не нашла ни одного места`;
+    const dropped = o.returned - o.kept;
+    if (!dropped) return `${name}: найдено ${o.kept}`;
+    return `${name}: модель вернула ${o.returned}, отброшено ${dropped} `
+      + '(гипотеза без датированного сигнала и ссылки или без компании и роли)';
+  });
 }
