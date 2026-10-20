@@ -53,6 +53,7 @@ export function duffelProvider(token: string): Provider {
     async searchOneWay(req: OneWayRequest) {
       const res = await fetch('https://api.duffel.com/air/offer_requests?return_offers=true&supplier_timeout=20000', {
         method: 'POST',
+        signal: AbortSignal.timeout(45000),
         headers: {
           Authorization: `Bearer ${token}`,
           'Duffel-Version': 'v2',

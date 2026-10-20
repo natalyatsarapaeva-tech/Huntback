@@ -79,7 +79,7 @@ export function serpProvider(apiKey: string): Provider {
         stops: String(req.maxStops >= 2 ? 3 : req.maxStops + 1),
         api_key: apiKey,
       });
-      const res = await fetch(`https://serpapi.com/search.json?${p}`);
+      const res = await fetch(`https://serpapi.com/search.json?${p}`, { signal: AbortSignal.timeout(45000) });
       const json = (await res.json()) as SerpResponse;
       if (!res.ok && !json.error) throw new Error(`SerpAPI ${res.status}`);
       return parseSerp(json, req.currency);

@@ -26,6 +26,8 @@ export interface SearchOptions {
   cacheDir?: string;
   cacheTtlMin?: number;
   concurrency?: number;
+  /** После каждого запроса: сколько готово из скольких и что вышло. */
+  onProgress?: (done: number, total: number, entry: SearchLog) => void;
   keepPerGroup?: number;
 }
 
@@ -100,17 +102,24 @@ export async function runSearch(q: Query, providers: Provider[], o: SearchOption
   const legs: Leg[] = [];
   let considered = 0;
   const planned = plannedRequests(q);
+  const total = planned.length * providers.length;
+  const note = (entry: SearchLog) => {
+    log.push(entry);
+    o.onProgress?.(log.length, total, entry);
+  };
   const tasks = planned.flatMap((p) => providers.map((prov) => async () => {
+    const base = { provider: prov.id, from: p.req.from, to: p.req.to, date: p.req.date };
     try {
       const r = await cached(prov, p.req, o);
-      log.push({ provider: prov.id, from: p.req.from, to: p.req.to, date: p.req.date, found: r.items.length, cached: r.cached });
+      note({ ...base, found: r.items.length, cached: r.cached });
       return { p, items: r.items };
     } catch (e) {
-      log.push({ provider: prov.id, from: p.req.from, to: p.req.to, date: p.req.date, found: 0, cached: false, error: (e as Error).message });
+      const err = e as Error;
+      note({ ...base, found: 0, cached: false, error: err.name === 'TimeoutError' ? 'источник не ответил за 45 с' : err.message });
       return { p, items: [] as Itinerary[] };
     }
   }));
-  const results = await pool(tasks, o.concurrency ?? 4);
+  const results = await pool(tasks, o.concurrency ?? 6);
 
   // Один и тот же рейс от разных провайдеров — оставляем дешёвый.
   const seen = new Map<string, Leg>();

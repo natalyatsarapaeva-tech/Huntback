@@ -10,6 +10,8 @@ import { countNewRequests, plannedRequests, runSearch } from './search.ts';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.PORT ?? 5178);
 const providers = availableProviders();
+/** Ход текущего поиска — интерфейс опрашивает его раз в секунду. */
+let progress = { running: false, done: 0, total: 0, errors: 0, lastError: '' };
 
 function send(res: import('node:http').ServerResponse, status: number, body: unknown, type = 'application/json') {
   res.writeHead(status, { 'Content-Type': `${type}; charset=utf-8` });
@@ -21,6 +23,7 @@ createServer(async (req, res) => {
     if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
       return send(res, 200, await readFile(join(root, 'public/index.html'), 'utf8'), 'text/html');
     }
+    if (req.method === 'GET' && req.url === '/api/progress') return send(res, 200, progress);
     if (req.method === 'GET' && req.url === '/api/config') {
       return send(res, 200, {
         preset: await loadPreset(join(root, 'presets/valencia-december.json')),
@@ -41,9 +44,27 @@ createServer(async (req, res) => {
           fresh: await countNewRequests(query, chosen, { cacheDir: join(root, '.cache') }),
         });
       }
+      if (progress.running) return send(res, 409, { errors: ['Предыдущий поиск ещё идёт — дождитесь его.'] });
       const started = Date.now();
-      const result = await runSearch(query, chosen, { cacheDir: join(root, '.cache') });
-      return send(res, 200, { ...result, requests: plannedRequests(query).length * chosen.length, ms: Date.now() - started });
+      progress = { running: true, done: 0, total: plannedRequests(query).length * chosen.length, errors: 0, lastError: '' };
+      try {
+        const result = await runSearch(query, chosen, {
+          cacheDir: join(root, '.cache'),
+          onProgress(done, total, e) {
+            progress.done = done;
+            if (e.error) { progress.errors++; progress.lastError = e.error; }
+            // Демо и кэш не печатаем: их сотни и они мгновенные.
+            if (e.provider !== 'mock' && !e.cached) {
+              console.log(`[${done}/${total}] ${e.provider} ${e.from}→${e.to} ${e.date}: ${e.error ? `ОШИБКА ${e.error}` : `${e.found} вариантов`}`);
+            }
+          },
+        });
+        const fresh = result.log.filter((l) => !l.cached && l.provider !== 'mock').length;
+        if (fresh) console.log(`Готово за ${Math.round((Date.now() - started) / 1000)} с: новых запросов ${fresh}, ошибок ${progress.errors}.`);
+        return send(res, 200, { ...result, requests: progress.total, ms: Date.now() - started });
+      } finally {
+        progress.running = false;
+      }
     }
     send(res, 404, { errors: ['Нет такого адреса'] });
   } catch (e) {
