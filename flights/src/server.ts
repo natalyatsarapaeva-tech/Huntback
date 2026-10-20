@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { Query } from './types.ts';
 import { availableProviders } from './providers/index.ts';
+import { loadEnv } from './env.ts';
 import { loadPreset, validate } from './query.ts';
 import { countNewRequests, plannedRequests, runSearch } from './search.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.PORT ?? 5178);
+const envReport = loadEnv(root);
 const providers = availableProviders();
 /** Ход текущего поиска — интерфейс опрашивает его раз в секунду. */
 let progress = { running: false, done: 0, total: 0, errors: 0, lastError: '' };
@@ -28,6 +30,7 @@ createServer(async (req, res) => {
       return send(res, 200, {
         preset: await loadPreset(join(root, 'presets/valencia-december.json')),
         providers: providers.map((p) => ({ id: p.id, label: p.label })),
+        envReport,
       });
     }
     if (req.method === 'POST' && (req.url === '/api/search' || req.url === '/api/estimate')) {
@@ -37,7 +40,7 @@ createServer(async (req, res) => {
       const errors = validate(query);
       if (errors.length) return send(res, 400, { errors });
       const chosen = providers.filter((p) => providerIds.includes(p.id));
-      if (!chosen.length) return send(res, 400, { errors: ['Выберите источник данных.'] });
+      if (!chosen.length) return send(res, 400, { errors: ['Не отмечен ни один источник данных — поставьте галочку в нижней панели.'] });
       if (req.url === '/api/estimate') {
         return send(res, 200, {
           total: plannedRequests(query).length * chosen.length,
@@ -73,4 +76,5 @@ createServer(async (req, res) => {
 }).listen(port, () => {
   console.log(`Поиск билетов: http://localhost:${port}`);
   console.log(`Источники: ${providers.map((p) => p.label).join(', ')}`);
+  for (const line of envReport) console.log(line);
 });

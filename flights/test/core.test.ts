@@ -181,3 +181,25 @@ test('счётчик новых запросов: демо бесплатно, �
   assert.equal(await countNewRequests(q, [mockProvider]), 0);
   assert.equal(await countNewRequests(q, [paid], { cacheDir: '/nonexistent' }), plannedRequests(q).length);
 });
+
+test('.env из Блокнота: BOM, UTF-16, пробелы, кавычки, ключ без имени', async () => {
+  const { decode, parseEnv, loadEnv } = await import('../src/env.ts');
+  const key = 'a'.repeat(60) + '1234';
+  assert.equal(parseEnv(decode(Buffer.from(`﻿SERPAPI_KEY=${key}\r\n`)))['SERPAPI_KEY'], key);
+  assert.equal(parseEnv(decode(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`SERPAPI_KEY=${key}`, 'utf16le')])))['SERPAPI_KEY'], key);
+  assert.equal(parseEnv(` serpapi_key = "${key}" `)['SERPAPI_KEY'], key);
+  assert.equal(parseEnv(`${key}\n`)['SERPAPI_KEY'], key);
+  assert.equal(parseEnv('# комментарий\nDUFFEL_TOKEN=duffel_test_x')['DUFFEL_TOKEN'], 'duffel_test_x');
+
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'env-'));
+  const env: NodeJS.ProcessEnv = {};
+  assert.match(loadEnv(dir, env).join(' '), /Файла с ключом нет/);
+  writeFileSync(join(dir, '.env.txt'), `﻿SERPAPI_KEY=${key}`);
+  const report = loadEnv(dir, env).join(' ');
+  assert.equal(env.SERPAPI_KEY, key);
+  assert.match(report, /\.env\.txt/);
+  assert.match(report, /…1234/);
+});

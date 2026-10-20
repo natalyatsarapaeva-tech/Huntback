@@ -161,7 +161,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-let preset, state, providers = [];
+let preset, state, providers = [], envReport = [];
 
 // state — всё, что редактируется в интерфейсе; из него собирается запрос.
 function fromPreset(p) {
@@ -338,8 +338,10 @@ $('#destinationName').addEventListener('input', (e) => { state.destinationName =
 
 function renderProviders() {
   if (!state.providerIds.some((id) => providers.some((p) => p.id === id))) state.providerIds = [providers[0].id];
+  const noKey = providers.length === 1
+    ? `<span class="hint" style="margin:0;color:var(--warn)" title="${esc(envReport.join(' '))}">Ключ не найден: ${esc(envReport.at(-1) ?? '')}</span>` : '';
   $('#providers').innerHTML = providers.map((p) =>
-    `<label class="check"><input type="checkbox" value="${p.id}" ${state.providerIds.includes(p.id) ? 'checked' : ''}> ${esc(p.label)}</label>`).join('');
+    `<label class="check"><input type="checkbox" value="${p.id}" ${state.providerIds.includes(p.id) ? 'checked' : ''}> ${esc(p.label)}</label>`).join('') + noKey;
 }
 $('#providers').addEventListener('change', () => {
   state.providerIds = [...$('#providers').querySelectorAll('input:checked')].map((x) => x.value);
@@ -482,6 +484,7 @@ function render(r) {
 fetch('/api/config').then((r) => r.json()).then((c) => {
   preset = c.preset;
   providers = c.providers;
+  envReport = c.envReport ?? [];
   state = { ...fromPreset(preset), ...(store.get('state') ?? {}) };
   renderAll();
   changed();

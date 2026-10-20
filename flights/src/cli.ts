@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { availableProviders } from './providers/index.ts';
+import { loadEnv } from './env.ts';
 import { loadPreset, validate } from './query.ts';
 import { plannedRequests, runSearch } from './search.ts';
 import { fmtDuration } from './time.ts';
@@ -20,6 +21,7 @@ const { values } = parseArgs({
   },
 });
 
+loadEnv(root);
 const q = await loadPreset(values.preset!);
 if (values.from) q.origins = values.from.toUpperCase().split(',');
 const errors = validate(q);
