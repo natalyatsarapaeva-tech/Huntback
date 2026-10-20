@@ -4,10 +4,10 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Поиск перелётов по нескольким аэропортам прилёта с дорогой до конечного города и правилами дневных/ночных пересадок.",
-  "engines": { "node": ">=22.6" },
+  "engines": { "node": ">=22.9" },
   "scripts": {
-    "start": "node --experimental-strip-types --no-warnings src/server.ts",
-    "search": "node --experimental-strip-types --no-warnings src/cli.ts",
+    "start": "node --env-file-if-exists=.env --experimental-strip-types --no-warnings src/server.ts",
+    "search": "node --env-file-if-exists=.env --experimental-strip-types --no-warnings src/cli.ts",
     "test": "node --test --experimental-strip-types --no-warnings test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   }

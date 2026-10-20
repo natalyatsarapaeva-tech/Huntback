@@ -17,7 +17,7 @@
 
 ## Запуск
 
-Нужен Node 22.6+ и больше ничего: зависимостей нет.
+Нужен Node 22.9+ (https://nodejs.org, версия LTS) и больше ничего: зависимостей нет.
 
 ```bash
 cd flights
@@ -27,10 +27,23 @@ npm test
 ```
 
 Без ключей работают только **демо-данные**: рейсы выдуманы, интерфейс
-об этом предупреждает. Для настоящих цен задайте ключ хотя бы одного источника:
+об этом предупреждает. Для настоящих цен положите ключ в файл `flights/.env`
+(он в `.gitignore` и в репозиторий не попадёт):
+
+```
+SERPAPI_KEY=ваш_ключ
+DUFFEL_TOKEN=ваш_токен
+```
+
+Достаточно одной строки — любого из источников. На Windows файл проще всего
+создать из PowerShell в папке `flights`: `notepad .env` → «Да» → вписать →
+сохранить. Дальше просто `npm start`.
+
+Если PowerShell отвечает, что `npm.ps1` нельзя запустить, потому что
+«running scripts is disabled», — запускайте `npm.cmd start` или один раз
+разрешите скрипты: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 ```bash
-SERPAPI_KEY=... DUFFEL_TOKEN=... npm start
 npm run search -- --from CPH,MMX --provider serpapi --provider duffel
 ```
 
