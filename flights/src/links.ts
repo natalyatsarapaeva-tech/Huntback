@@ -18,13 +18,13 @@ export function oneWayLinks(from: string, to: string, date: string): Link[] {
   ];
 }
 
-export function roundTripLinks(from: string, outTo: string, outDate: string, inFrom: string, inDate: string): Link[] {
-  if (outTo !== inFrom) {
+export function roundTripLinks(from: string, outTo: string, outDate: string, inFrom: string, inTo: string, inDate: string): Link[] {
+  if (outTo !== inFrom || from !== inTo) {
     // Open-jaw: Skyscanner и Google принимают только через мульти-сити форму,
     // Anywayanyday — тем же форматом, что и обычный туда-обратно.
     return [
-      { label: 'Anywayanyday (open-jaw)', url: `https://www.anywayanyday.com/avia/offers/${ddmm(outDate)}${from}${outTo}${ddmm(inDate)}${inFrom}${from}AD1CN0IN0SCE/` },
-      { label: 'Google Flights', url: `https://www.google.com/travel/flights?q=${encodeURIComponent(`flights from ${from} to ${outTo} on ${outDate} and ${inFrom} to ${from} on ${inDate}`)}` },
+      { label: 'Anywayanyday (open-jaw)', url: `https://www.anywayanyday.com/avia/offers/${ddmm(outDate)}${from}${outTo}${ddmm(inDate)}${inFrom}${inTo}AD1CN0IN0SCE/` },
+      { label: 'Google Flights', url: `https://www.google.com/travel/flights?q=${encodeURIComponent(`flights from ${from} to ${outTo} on ${outDate} and ${inFrom} to ${inTo} on ${inDate}`)}` },
     ];
   }
   const f = from.toLowerCase();

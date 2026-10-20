@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import type { Query } from './types.ts';
 import { availableProviders } from './providers/index.ts';
 import { loadPreset, validate } from './query.ts';
-import { plannedRequests, runSearch } from './search.ts';
+import { countNewRequests, plannedRequests, runSearch } from './search.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.PORT ?? 5178);
@@ -27,7 +27,7 @@ createServer(async (req, res) => {
         providers: providers.map((p) => ({ id: p.id, label: p.label })),
       });
     }
-    if (req.method === 'POST' && req.url === '/api/search') {
+    if (req.method === 'POST' && (req.url === '/api/search' || req.url === '/api/estimate')) {
       let raw = '';
       for await (const chunk of req) raw += chunk;
       const { query, providerIds } = JSON.parse(raw) as { query: Query; providerIds: string[] };
@@ -35,6 +35,12 @@ createServer(async (req, res) => {
       if (errors.length) return send(res, 400, { errors });
       const chosen = providers.filter((p) => providerIds.includes(p.id));
       if (!chosen.length) return send(res, 400, { errors: ['Выберите источник данных.'] });
+      if (req.url === '/api/estimate') {
+        return send(res, 200, {
+          total: plannedRequests(query).length * chosen.length,
+          fresh: await countNewRequests(query, chosen, { cacheDir: join(root, '.cache') }),
+        });
+      }
       const started = Date.now();
       const result = await runSearch(query, chosen, { cacheDir: join(root, '.cache') });
       return send(res, 200, { ...result, requests: plannedRequests(query).length * chosen.length, ms: Date.now() - started });

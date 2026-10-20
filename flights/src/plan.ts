@@ -96,7 +96,7 @@ export function combine(outs: Leg[], ins: Leg[], q: Query, limit = 60): Trip[] {
   const trips: Trip[] = [];
   for (const o of outs) {
     for (const i of ins) {
-      if (o.origin !== i.origin) continue;
+      if (q.returnSameOrigin && o.origin !== i.origin) continue;
       if (q.returnSameAirport && o.airport !== i.airport) continue;
       const days = daysBetween(o.date, i.date);
       if (days < q.tripDays.min || days > q.tripDays.max) continue;
@@ -107,7 +107,7 @@ export function combine(outs: Leg[], ins: Leg[], q: Query, limit = 60): Trip[] {
         score: o.score + i.score,
         pareto: false,
         tags: [],
-        links: roundTripLinks(o.origin, o.airport, o.date, i.airport, i.date),
+        links: roundTripLinks(o.origin, o.airport, o.date, i.airport, i.origin, i.date),
       });
     }
   }

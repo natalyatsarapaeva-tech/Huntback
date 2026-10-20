@@ -36,7 +36,9 @@ export function plannedRequests(q: Query): { dir: 'out' | 'in'; origin: string; 
   const list: ReturnType<typeof plannedRequests> = [];
   for (const origin of q.origins) {
     for (const a of q.arrivals) {
-      const base = { maxStops: q.maxStops, currency: q.currency };
+      // Всегда до двух пересадок: число пересадок фильтруем у себя, чтобы ползунок
+      // не тратил платные запросы.
+      const base = { maxStops: 2, currency: q.currency };
       for (const date of out) list.push({ dir: 'out', origin, airport: a.airport, req: { ...base, from: origin, to: a.airport, date } });
       for (const date of back) list.push({ dir: 'in', origin, airport: a.airport, req: { ...base, from: a.airport, to: origin, date } });
     }
@@ -44,13 +46,34 @@ export function plannedRequests(q: Query): { dir: 'out' | 'in'; origin: string; 
   return list;
 }
 
+const cacheFile = (dir: string, p: Provider, req: OneWayRequest) =>
+  join(dir, `${p.id}-${req.from}-${req.to}-${req.date}-${req.maxStops}-${req.currency}.json`);
+
+async function readCache(p: Provider, req: OneWayRequest, o: SearchOptions): Promise<Itinerary[] | null> {
+  if (!o.cacheDir) return null;
+  try {
+    const hit = JSON.parse(await readFile(cacheFile(o.cacheDir, p, req), 'utf8')) as { at: number; items: Itinerary[] };
+    if (Date.now() - hit.at < (o.cacheTtlMin ?? 360) * 60000) return hit.items;
+  } catch { /* нет кэша */ }
+  return null;
+}
+
+/** Сколько платных запросов уйдёт в сеть: демо бесплатно, кэш тоже. */
+export async function countNewRequests(q: Query, providers: Provider[], o: SearchOptions = {}): Promise<number> {
+  let n = 0;
+  for (const p of plannedRequests(q)) {
+    for (const prov of providers) {
+      if (prov.id !== 'mock' && !(await readCache(prov, p.req, o))) n++;
+    }
+  }
+  return n;
+}
+
 async function cached(p: Provider, req: OneWayRequest, o: SearchOptions): Promise<{ items: Itinerary[]; cached: boolean }> {
   if (!o.cacheDir || p.id === 'mock') return { items: await p.searchOneWay(req), cached: false };
-  const file = join(o.cacheDir, `${p.id}-${req.from}-${req.to}-${req.date}-${req.maxStops}-${req.currency}.json`);
-  try {
-    const hit = JSON.parse(await readFile(file, 'utf8')) as { at: number; items: Itinerary[] };
-    if (Date.now() - hit.at < (o.cacheTtlMin ?? 360) * 60000) return { items: hit.items, cached: true };
-  } catch { /* нет кэша */ }
+  const file = cacheFile(o.cacheDir, p, req);
+  const hit = await readCache(p, req, o);
+  if (hit) return { items: hit, cached: true };
   const items = await p.searchOneWay(req);
   await mkdir(o.cacheDir, { recursive: true });
   await writeFile(file, JSON.stringify({ at: Date.now(), items }));

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Поиск перелётов</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #f6f7f9; --card: #fff; --text: #1f2933; --muted: #66727f; --line: #e1e5ea;
@@ -21,22 +22,41 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
   .sub { color: var(--muted); margin: 0 0 20px; }
-  form { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 16px; }
-  .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
+  .grid { display: grid; gap: 14px 22px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
   label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
-  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
-  textarea { font: 12px/1.4 ui-monospace, monospace; min-height: 220px; }
-  fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; }
-  legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
-  .checks { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-  .checks label { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
-  .checks input { width: auto; }
-  button { font: inherit; font-weight: 600; background: var(--accent); color: var(--card); border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer; justify-self: start; }
-  button:disabled { opacity: .5; cursor: wait; }
-  .hint { font-size: 12px; color: var(--muted); }
-  .status { margin: 20px 0 10px; color: var(--muted); }
-  .errors { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 10px 12px; }
+  .val { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; width: 100%; min-width: 0; }
+  input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+  input[type=checkbox] { width: auto; accent-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--text); font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 6px 4px 10px; background: var(--bg); }
+  .chip b { font-weight: 600; }
+  .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+  .add { display: flex; gap: 6px; }
+  .add input { width: 90px; text-transform: uppercase; }
+  .btn { font: inherit; font-weight: 600; background: var(--accent); color: var(--card); border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
+  .btn.ghost { background: var(--accent-soft); color: var(--accent); padding: 6px 12px; font-size: 14px; }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .arrival { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .arrival.off { opacity: .55; }
+  .arrival-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
+  .arrival-head input[type=text] { width: auto; flex: 1 1 160px; }
+  .arrival-head input.code { width: 70px; flex: none; text-transform: uppercase; }
+  .arrival details { margin-top: 2px; }
+  .arrival details summary { font-size: 13px; }
+  .arrival details .mini { margin-top: 8px; }
+  .mini { display: grid; gap: 8px 12px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .mini label { font-size: 12px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  .bar { position: sticky; bottom: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; box-shadow: 0 4px 18px rgba(0,0,0,.08); z-index: 2; }
+  .bar .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .estimate { font-size: 13px; color: var(--muted); flex: 1 1 220px; }
+  .status { margin: 18px 0 8px; color: var(--muted); }
+  .errors { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
   .trip { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 12px 0; }
   .trip-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
   .price { font-size: 22px; font-weight: 700; }
@@ -59,50 +79,67 @@
 <body>
 <main>
   <h1>Поиск перелётов с умными пересадками</h1>
-  <p class="sub">Сравнивает прилёт в несколько аэропортов с дорогой до конечного города и отбрасывает неудобные пересадки.</p>
+  <p class="sub">Сравнивает прилёт в несколько аэропортов с дорогой до конечного города и отбрасывает неудобные пересадки. Ползунки пересчитывают выдачу сразу, если для этого не нужны новые платные запросы.</p>
 
-  <form id="f">
-    <div class="row">
-      <label>Откуда (коды IATA через запятую)<input name="origins" placeholder="например ARN или STO, LED" required></label>
-      <label>Вылет с<input name="departFrom" type="date"></label>
-      <label>по<input name="departTo" type="date"></label>
-      <label>Дней в поездке, от<input name="daysMin" type="number" min="1"></label>
-      <label>до<input name="daysMax" type="number" min="1"></label>
+  <section class="panel">
+    <h2>Откуда</h2>
+    <div class="chips" id="origins"></div>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="returnSameOrigin"> возвращаться в тот же аэропорт, откуда улетели</label>
+  </section>
+
+  <section class="panel">
+    <h2>Куда</h2>
+    <div class="grid" style="margin-bottom:12px">
+      <label>Конечный город<input type="text" id="destinationName"></label>
     </div>
+    <div id="arrivals"></div>
+    <button type="button" class="btn ghost" id="addArrival">+ аэропорт прилёта</button>
+    <label class="check" style="margin-top:10px"><input type="checkbox" id="returnSameAirport"> улетать обратно из того же аэропорта, куда прилетели</label>
+    <p class="hint">Поля поезда пустые — значит, аэропорт в самом конечном городе и нужен только трансфер. Цены и время поездов ориентировочные: поправьте, если уже смотрели расписание.</p>
+  </section>
 
-    <fieldset>
-      <legend>Куда прилетать</legend>
-      <div class="checks" id="arrivals"></div>
-      <div class="checks" style="margin-top:8px"><label><input type="checkbox" name="returnSameAirport"> улетать обратно из того же аэропорта</label></div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Пересадки</legend>
-      <div class="row">
-        <label>Дневная — не длиннее, ч<input name="dayMax" type="number" step="0.5" min="0"></label>
-        <label>Ночная — не короче, ч<input name="nightMin" type="number" step="0.5" min="0"></label>
-        <label>Ночь с<input name="nightStart" type="time"></label>
-        <label>до<input name="nightEnd" type="time"></label>
-        <label>Стыковка не короче, мин<input name="minConnect" type="number" min="0"></label>
-        <label>Пересадок не больше<select name="maxStops"><option value="0">0 — только прямые</option><option value="1">1</option><option value="2">2</option></select></label>
-      </div>
-      <p class="hint">Пересадка ночная, если хотя бы <span id="overlap"></span> мин приходятся на ночное окно. Короткая ночная пересадка — ночь на скамейке, поэтому её отбрасываем; длинная — время на отель.</p>
-    </fieldset>
-
-    <div class="row">
-      <label>Цена часа в дороге, €<input name="valueOfHour" type="number" min="0"></label>
-      <fieldset style="grid-column: span 2"><legend>Источники</legend><div class="checks" id="providers"></div></fieldset>
+  <section class="panel">
+    <h2>Когда</h2>
+    <div class="grid">
+      <label>Вылет не раньше<input type="date" id="departFrom"></label>
+      <label>и не позже<input type="date" id="departTo"></label>
+      <label>Дней в поездке, от: <span class="val" id="daysMinV"></span><input type="range" id="daysMin" min="1" max="30"></label>
+      <label>до: <span class="val" id="daysMaxV"></span><input type="range" id="daysMax" min="1" max="30"></label>
     </div>
-    <p class="hint">Цена часа решает, сколько вы готовы доплатить за более быстрый вариант. 0 — только цена.</p>
+  </section>
 
-    <details>
-      <summary>Поезда, трансферы, отель, курсы валют — всё, что не в форме</summary>
-      <p class="hint">Цены и время поездов — ориентировочные. Поправьте под даты, если уже смотрели расписание Renfe.</p>
-      <textarea id="advanced" spellcheck="false"></textarea>
-    </details>
+  <section class="panel">
+    <h2>Пересадки</h2>
+    <div class="grid">
+      <label>Дневная — не длиннее: <span class="val" id="dayMaxV"></span><input type="range" id="dayMax" min="30" max="720" step="15"></label>
+      <label>Ночная — не короче: <span class="val" id="nightMinV"></span><input type="range" id="nightMin" min="180" max="1080" step="30"></label>
+      <label>Стыковка — не короче: <span class="val" id="minConnectV"></span><input type="range" id="minConnect" min="20" max="240" step="5"></label>
+      <label>Пересадок не больше: <span class="val" id="maxStopsV"></span><input type="range" id="maxStops" min="0" max="2" step="1"></label>
+      <label>Ночь начинается в: <span class="val" id="nightStartV"></span><input type="range" id="nightStart" min="1200" max="1560" step="30"></label>
+      <label>Ночь кончается в: <span class="val" id="nightEndV"></span><input type="range" id="nightEnd" min="180" max="600" step="30"></label>
+      <label>Ночная, если на ночь приходится от: <span class="val" id="nightOverlapV"></span><input type="range" id="nightOverlap" min="0" max="240" step="15"></label>
+    </div>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="allowAirportChange"> разрешить смену аэропорта на пересадке (например, LGW → LHR)</label>
+    <p class="hint">Короткая ночная пересадка — ночь на скамейке, поэтому её отбрасываем; длинная — время на отель. Ползунки пересадок денег не тратят: выдача берётся из уже скачанного.</p>
+  </section>
 
-    <button id="go">Искать</button>
-  </form>
+  <section class="panel">
+    <h2>Дорога и деньги</h2>
+    <div class="grid">
+      <label>Цена часа в дороге: <span class="val" id="valueOfHourV"></span><input type="range" id="valueOfHour" min="0" max="80" step="1"></label>
+      <label>В аэропорту до вылета за: <span class="val" id="checkinV"></span><input type="range" id="checkin" min="45" max="240" step="15"></label>
+      <label>От посадки до выхода из аэропорта: <span class="val" id="exitV"></span><input type="range" id="exit" min="10" max="120" step="5"></label>
+      <label>Ночёвка, если не успеть на поезд: <span class="val" id="hotelV"></span><input type="range" id="hotel" min="0" max="250" step="5"></label>
+    </div>
+    <p class="hint">Цена часа решает, сколько вы готовы доплатить за более быстрый вариант. 0 — сортировка только по цене.</p>
+  </section>
+
+  <div class="bar">
+    <div class="checks" id="providers"></div>
+    <span class="estimate" id="estimate"></span>
+    <button type="button" class="btn ghost" id="reset">Сбросить</button>
+    <button type="button" class="btn" id="go">Искать</button>
+  </div>
 
   <div id="status" class="status"></div>
   <div id="results"></div>
@@ -110,58 +147,263 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
-const f = $('#f');
-let preset;
-
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const dur = (m) => { const h = Math.floor(m / 60), r = Math.round(m % 60); return r ? `${h} ч ${r} мин` : `${h} ч`; };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dur = (m) => { const h = Math.floor(m / 60), r = Math.round(m % 60); return h && r ? `${h} ч ${r} мин` : h ? `${h} ч` : `${r} мин`; };
+const clock = (m) => { m = ((m % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+const toClock = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 const time = (s) => s.slice(11, 16);
 const day = (s) => new Date(s.slice(0, 10) + 'T12:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', weekday: 'short' });
-const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const eur = (n) => `${Math.round(n)} €`;
+const plural = (n, a, b, c) => { const t = n % 10, h = n % 100; return t === 1 && h !== 11 ? a : t >= 2 && t <= 4 && (h < 12 || h > 14) ? b : c; };
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
 
-function load(p, providers) {
-  preset = p;
-  const saved = (() => { try { return localStorage.getItem('origins'); } catch { return null; } })();
-  f.origins.value = (p.origins.length ? p.origins.join(', ') : saved) ?? '';
-  f.departFrom.value = p.departFrom; f.departTo.value = p.departTo;
-  f.daysMin.value = p.tripDays.min; f.daysMax.value = p.tripDays.max;
-  f.returnSameAirport.checked = p.returnSameAirport;
-  f.dayMax.value = p.layover.dayMaxMin / 60; f.nightMin.value = p.layover.nightMinMin / 60;
-  f.nightStart.value = p.layover.nightStart; f.nightEnd.value = p.layover.nightEnd;
-  f.minConnect.value = p.layover.minConnectMin; f.maxStops.value = p.maxStops;
-  f.valueOfHour.value = p.valueOfHour;
-  $('#overlap').textContent = p.layover.nightOverlapMin;
-  $('#arrivals').innerHTML = p.arrivals.map((a) =>
-    `<label><input type="checkbox" name="arr" value="${a.airport}" checked> ${esc(a.airport)} — ${esc(a.label)}</label>`).join('');
-  $('#providers').innerHTML = providers.map((pr, i) =>
-    `<label><input type="checkbox" name="prov" value="${pr.id}" ${i === 0 ? 'checked' : ''}> ${esc(pr.label)}</label>`).join('');
-  const { arrivals, ground, fx, currency } = p;
-  $('#advanced').value = JSON.stringify({ ground, currency, fx, arrivals }, null, 2);
-}
+let preset, state, providers = [];
 
-function readQuery() {
-  const adv = JSON.parse($('#advanced').value);
-  const chosen = [...f.querySelectorAll('[name=arr]:checked')].map((x) => x.value);
+// state — всё, что редактируется в интерфейсе; из него собирается запрос.
+function fromPreset(p) {
   return {
-    ...preset,
-    ...adv,
-    origins: f.origins.value.toUpperCase().split(/[\s,;]+/).filter(Boolean),
-    arrivals: adv.arrivals.filter((a) => chosen.includes(a.airport)),
-    departFrom: f.departFrom.value, departTo: f.departTo.value,
-    tripDays: { min: +f.daysMin.value, max: +f.daysMax.value },
-    returnSameAirport: f.returnSameAirport.checked,
-    maxStops: +f.maxStops.value,
-    valueOfHour: +f.valueOfHour.value,
-    layover: {
-      ...preset.layover,
-      dayMaxMin: +f.dayMax.value * 60, nightMinMin: +f.nightMin.value * 60,
-      nightStart: f.nightStart.value, nightEnd: f.nightEnd.value,
-      minConnectMin: +f.minConnect.value,
-    },
+    origins: p.origins.map((code) => ({ code, on: true })),
+    returnSameOrigin: p.returnSameOrigin,
+    destinationName: p.destinationName,
+    arrivals: p.arrivals.map((a) => ({ ...structuredClone(a), on: true })),
+    returnSameAirport: p.returnSameAirport,
+    departFrom: p.departFrom, departTo: p.departTo,
+    tripDays: { ...p.tripDays },
+    maxStops: p.maxStops,
+    layover: { ...p.layover },
+    ground: { ...p.ground },
+    valueOfHour: p.valueOfHour,
+    providerIds: [],
   };
 }
 
+function toQuery() {
+  return {
+    origins: state.origins.filter((o) => o.on).map((o) => o.code),
+    destinationName: state.destinationName,
+    arrivals: state.arrivals.filter((a) => a.on && /^[A-Z]{3}$/.test(a.airport)).map(({ on, ...a }) => a),
+    departFrom: state.departFrom, departTo: state.departTo,
+    tripDays: state.tripDays,
+    returnSameAirport: state.returnSameAirport,
+    returnSameOrigin: state.returnSameOrigin,
+    maxStops: state.maxStops,
+    layover: state.layover,
+    ground: state.ground,
+    valueOfHour: state.valueOfHour,
+    currency: preset.currency,
+    fx: preset.fx,
+  };
+}
+
+// ——— Откуда ———
+function renderOrigins() {
+  $('#origins').innerHTML = state.origins.map((o, i) => `
+    <span class="chip"><label class="check"><input type="checkbox" data-i="${i}" ${o.on ? 'checked' : ''}><b>${esc(o.code)}</b></label>
+    <button type="button" class="x" data-del="${i}" title="Убрать">×</button></span>`).join('') + `
+    <span class="add"><input id="newOrigin" maxlength="3" placeholder="IATA"><button type="button" class="btn ghost" id="addOrigin">Добавить</button></span>`;
+}
+$('#origins').addEventListener('change', (e) => { const i = e.target.dataset.i; if (i !== undefined) { state.origins[i].on = e.target.checked; changed(true); } });
+$('#origins').addEventListener('click', (e) => {
+  if (e.target.dataset.del !== undefined) { state.origins.splice(+e.target.dataset.del, 1); renderOrigins(); changed(true); }
+  if (e.target.id === 'addOrigin') addOrigin();
+});
+$('#origins').addEventListener('keydown', (e) => { if (e.target.id === 'newOrigin' && e.key === 'Enter') addOrigin(); });
+function addOrigin() {
+  const code = $('#newOrigin').value.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code) || state.origins.some((o) => o.code === code)) { $('#newOrigin').focus(); return; }
+  state.origins.push({ code, on: true });
+  renderOrigins();
+  changed(true);
+}
+
+// ——— Куда ———
+const summary = (a) => `трансфер ${dur(a.access.minutes)}, ${eur(a.access.cost)}` + (a.rail
+  ? ` · поезд ${dur(a.rail.minutes)}, ${eur(a.rail.cost)} · поезда ${a.rail.firstDep}–${a.rail.lastDep}`
+  : ' · без поезда');
+const num = (v) => (v === '' || v == null ? null : +v);
+function renderArrivals() {
+  $('#arrivals').innerHTML = state.arrivals.map((a, i) => {
+    const r = a.rail ?? {};
+    return `<div class="arrival ${a.on ? '' : 'off'}" data-i="${i}">
+      <div class="arrival-head">
+        <input type="checkbox" data-f="on" ${a.on ? 'checked' : ''} title="Искать сюда">
+        <input type="text" class="code" data-f="airport" value="${esc(a.airport)}" maxlength="3" placeholder="IATA">
+        <input type="text" data-f="label" value="${esc(a.label)}" placeholder="Подпись">
+        <button type="button" class="x" data-del="${i}" title="Убрать">×</button>
+      </div>
+      <details>
+      <summary>${esc(summary(a))}</summary>
+      <div class="mini">
+        <label>Трансфер, мин<input type="number" min="0" data-f="access.minutes" value="${a.access.minutes}"></label>
+        <label>Трансфер, €<input type="number" min="0" step="0.1" data-f="access.cost" value="${a.access.cost}"></label>
+        <label>Поезд, мин<input type="number" min="0" data-f="rail.minutes" value="${r.minutes ?? ''}" placeholder="нет"></label>
+        <label>Поезд, €<input type="number" min="0" step="0.5" data-f="rail.cost" value="${r.cost ?? ''}" placeholder="нет"></label>
+        ${a.rail ? `<label>Первый поезд<input type="time" data-f="rail.firstDep" value="${r.firstDep}"></label>
+        <label>Последний поезд<input type="time" data-f="rail.lastDep" value="${r.lastDep}"></label>
+        <label>Поезда каждые, мин<input type="number" min="0" data-f="rail.headwayMin" value="${r.headwayMin}"></label>` : ''}
+      </div>
+      </details>
+    </div>`;
+  }).join('');
+}
+$('#arrivals').addEventListener('change', (e) => {
+  const box = e.target.closest('.arrival');
+  const f = e.target.dataset.f;
+  if (!box || !f) return;
+  const a = state.arrivals[+box.dataset.i];
+  const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  const network = f === 'on' || f === 'airport';
+  if (f === 'on') a.on = v;
+  else if (f === 'airport') a.airport = v.trim().toUpperCase();
+  else if (f === 'label') a.label = v;
+  else if (f.startsWith('access.')) a.access[f.slice(7)] = +v || 0;
+  else if (f.startsWith('rail.')) {
+    const k = f.slice(5);
+    const value = k === 'firstDep' || k === 'lastDep' ? v : num(v);
+    if ((k === 'minutes' || k === 'cost') && value === null) a.rail = null;
+    else {
+      a.rail ??= { name: 'Поезд', minutes: 120, cost: 25, firstDep: '06:30', lastDep: '21:00', headwayMin: 60 };
+      a.rail[k] = value;
+    }
+  }
+  const open = [...document.querySelectorAll('#arrivals details')].map((d) => d.open);
+  renderArrivals();
+  document.querySelectorAll('#arrivals details').forEach((d, i) => (d.open = open[i]));
+  changed(network);
+});
+$('#arrivals').addEventListener('click', (e) => {
+  if (e.target.dataset.del === undefined) return;
+  state.arrivals.splice(+e.target.dataset.del, 1);
+  renderArrivals();
+  changed(true);
+});
+$('#addArrival').addEventListener('click', () => {
+  state.arrivals.push({
+    airport: '', label: 'Новый аэропорт + поезд', on: true,
+    access: { name: 'Трансфер аэропорт ↔ вокзал', minutes: 30, cost: 5 },
+    rail: { name: 'Поезд', minutes: 120, cost: 25, firstDep: '06:30', lastDep: '21:00', headwayMin: 60 },
+    bookingLinks: [],
+  });
+  renderArrivals();
+  $('#arrivals .arrival:last-child details').open = true;
+  $('#arrivals .arrival:last-child .code').focus();
+});
+
+// ——— Ползунки и простые поля ———
+// [id, как прочитать в state, как записать, подпись значения, нужны ли новые запросы]
+const fields = [
+  ['departFrom', (s) => s.departFrom, (s, v) => (s.departFrom = v), null, true],
+  ['departTo', (s) => s.departTo, (s, v) => (s.departTo = v), null, true],
+  ['daysMin', (s) => s.tripDays.min, (s, v) => { s.tripDays.min = +v; if (s.tripDays.max < +v) s.tripDays.max = +v; }, (v) => `${v} ${plural(v, 'день', 'дня', 'дней')}`, true],
+  ['daysMax', (s) => s.tripDays.max, (s, v) => { s.tripDays.max = +v; if (s.tripDays.min > +v) s.tripDays.min = +v; }, (v) => `${v} ${plural(v, 'день', 'дня', 'дней')}`, true],
+  ['dayMax', (s) => s.layover.dayMaxMin, (s, v) => (s.layover.dayMaxMin = +v), dur],
+  ['nightMin', (s) => s.layover.nightMinMin, (s, v) => (s.layover.nightMinMin = +v), dur],
+  ['minConnect', (s) => s.layover.minConnectMin, (s, v) => (s.layover.minConnectMin = +v), dur],
+  ['maxStops', (s) => s.maxStops, (s, v) => (s.maxStops = +v), (v) => (+v === 0 ? 'только прямые' : v)],
+  ['nightStart', (s) => { const m = toClock(s.layover.nightStart); return m < 720 ? m + 1440 : m; }, (s, v) => (s.layover.nightStart = clock(+v)), (v) => clock(+v)],
+  ['nightEnd', (s) => toClock(s.layover.nightEnd), (s, v) => (s.layover.nightEnd = clock(+v)), (v) => clock(+v)],
+  ['nightOverlap', (s) => s.layover.nightOverlapMin, (s, v) => (s.layover.nightOverlapMin = +v), dur],
+  ['valueOfHour', (s) => s.valueOfHour, (s, v) => (s.valueOfHour = +v), (v) => `${v} €/ч`],
+  ['checkin', (s) => s.ground.checkinMin, (s, v) => (s.ground.checkinMin = +v), dur],
+  ['exit', (s) => s.ground.exitMin, (s, v) => (s.ground.exitMin = +v), dur],
+  ['hotel', (s) => s.ground.hotelCost, (s, v) => (s.ground.hotelCost = +v), (v) => `${v} €`],
+];
+const flags = [
+  ['returnSameOrigin', (s) => s.returnSameOrigin, (s, v) => (s.returnSameOrigin = v)],
+  ['returnSameAirport', (s) => s.returnSameAirport, (s, v) => (s.returnSameAirport = v)],
+  ['allowAirportChange', (s) => s.layover.allowAirportChange, (s, v) => (s.layover.allowAirportChange = v)],
+];
+function renderFields() {
+  for (const [id, get, , label] of fields) {
+    $('#' + id).value = get(state);
+    if (label) $('#' + id + 'V').textContent = label(get(state));
+  }
+  for (const [id, get] of flags) $('#' + id).checked = get(state);
+  $('#destinationName').value = state.destinationName;
+}
+for (const [id, get, set, label, network] of fields) {
+  $('#' + id).addEventListener('input', (e) => {
+    set(state, e.target.value);
+    // Связанные ползунки (дней от/до) двигают друг друга.
+    renderFields();
+    changed(!!network);
+  });
+}
+for (const [id, , set] of flags) $('#' + id).addEventListener('change', (e) => { set(state, e.target.checked); changed(false); });
+$('#destinationName').addEventListener('input', (e) => { state.destinationName = e.target.value; changed(false); });
+
+function renderProviders() {
+  if (!state.providerIds.some((id) => providers.some((p) => p.id === id))) state.providerIds = [providers[0].id];
+  $('#providers').innerHTML = providers.map((p) =>
+    `<label class="check"><input type="checkbox" value="${p.id}" ${state.providerIds.includes(p.id) ? 'checked' : ''}> ${esc(p.label)}</label>`).join('');
+}
+$('#providers').addEventListener('change', () => {
+  state.providerIds = [...$('#providers').querySelectorAll('input:checked')].map((x) => x.value);
+  changed(true);
+});
+
+function renderAll() { renderOrigins(); renderArrivals(); renderFields(); renderProviders(); }
+
+// ——— Пересчёт ———
+// После любой правки спрашиваем сервер, сколько новых платных запросов нужно.
+// Ноль — ищем сразу (из кэша это мгновенно), иначе ждём кнопку.
+let timer, lastResult, freshNeeded = 0, seq = 0;
+function changed() {
+  store.set('state', state);
+  clearTimeout(timer);
+  timer = setTimeout(estimate, 300);
+}
+
+async function post(url) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: toQuery(), providerIds: state.providerIds }) });
+  return { ok: res.ok, body: await res.json() };
+}
+
+async function estimate() {
+  const my = ++seq;
+  const { ok, body } = await post('/api/estimate');
+  if (my !== seq) return;
+  if (!ok) {
+    $('#estimate').innerHTML = `<span style="color:var(--warn)">${body.errors.map(esc).join(' ')}</span>`;
+    $('#go').disabled = true;
+    return;
+  }
+  $('#go').disabled = false;
+  freshNeeded = body.fresh;
+  if (body.fresh === 0) {
+    $('#estimate').textContent = `${body.total} ${plural(body.total, 'запрос', 'запроса', 'запросов')}, новых платных нет — пересчитываю сразу`;
+    $('#go').textContent = 'Искать';
+    search();
+  } else {
+    $('#estimate').textContent = `${body.total} ${plural(body.total, 'запрос', 'запроса', 'запросов')}, из них новых платных: ${body.fresh}`;
+    $('#go').textContent = `Искать (−${body.fresh})`;
+  }
+}
+
+async function search() {
+  const my = ++seq;
+  $('#go').disabled = true;
+  if (!lastResult) $('#status').textContent = 'Ищу… с настоящими источниками это занимает до минуты.';
+  try {
+    const { ok, body } = await post('/api/search');
+    if (my !== seq) return;
+    if (!ok) $('#status').innerHTML = `<div class="errors">${body.errors.map(esc).join('<br>')}</div>`;
+    else { lastResult = body; render(body); }
+  } catch (err) {
+    $('#status').innerHTML = `<div class="errors">${esc(err.message)}</div>`;
+  } finally {
+    if (my === seq) $('#go').disabled = false;
+  }
+  if (my === seq && freshNeeded) { freshNeeded = 0; $('#go').textContent = 'Искать'; $('#estimate').textContent = 'Всё скачано — ползунки теперь пересчитывают сразу'; }
+}
+
+$('#go').addEventListener('click', search);
+$('#reset').addEventListener('click', () => { const ids = state.providerIds; state = fromPreset(preset); state.providerIds = ids; renderAll(); changed(); });
+
+// ——— Выдача ———
 function legHtml(l, title) {
   const s = l.itinerary.segments;
   const segs = s.map((x, i) => {
@@ -169,9 +411,10 @@ function legHtml(l, title) {
     return `<div class="seg">${time(x.dep)} ${esc(x.from)} → ${time(x.arr)} ${esc(x.to)} · ${esc(x.carrier)} ${esc(x.flightNo)}</div>${lay}`;
   }).join('');
   const g = l.ground;
+  const city = esc(state.destinationName);
   const groundTxt = l.dir === 'out'
-    ? `${esc(cap(preset.destinationIn))} к ${time(g.at)}${g.at.slice(0, 10) !== s.at(-1).arr.slice(0, 10) ? ' (на следующий день)' : ''}: ${g.notes.map(esc).join(' → ')} · ${eur(g.cost)}`
-    : `Выезд ${esc(preset.destinationFrom)} в ${time(g.at)}${g.at.slice(0, 10) !== s[0].dep.slice(0, 10) ? ' (накануне)' : ''}: ${g.notes.map(esc).join(' → ')} · ${eur(g.cost)}`;
+    ? `${city}: на месте в ${time(g.at)}${g.at.slice(0, 10) !== s.at(-1).arr.slice(0, 10) ? ' следующего дня' : ''} · ${g.notes.map(esc).join(' → ')} · ${eur(g.cost)}`
+    : `${city}: выезд в ${time(g.at)}${g.at.slice(0, 10) !== s[0].dep.slice(0, 10) ? ' накануне' : ''} · ${g.notes.map(esc).join(' → ')} · ${eur(g.cost)}`;
   const links = [...l.links, ...l.groundLinks].map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a>`).join('');
   return `<div class="leg">
     <div class="leg-title">${title}: ${day(s[0].dep)} · ${esc(l.groundLabel)} · билет ${eur(l.flightPrice)} · ${dur(l.itinerary.totalMin)} в воздухе и пересадках</div>
@@ -186,8 +429,8 @@ function render(r) {
   const errs = r.log.filter((l) => l.error);
   const rej = Object.entries(r.rejected).sort((a, b) => b[1] - a[1]);
   const demo = r.log.some((l) => l.provider === 'mock')
-    ? '<div class="errors">Это демо-данные: рейсы и цены выдуманы. Для настоящих цен добавьте ключ SerpAPI или Duffel (см. README).</div>' : '';
-  $('#status').innerHTML = demo + `Запросов: ${r.requests} (из кэша ${r.log.filter((l) => l.cached).length}), вариантов просмотрено: ${r.considered}, за ${(r.ms / 1000).toFixed(1)} с.
+    ? '<div class="errors">Это демо-данные: рейсы и цены выдуманы. Для настоящих цен запустите сервер с ключом SerpAPI или Duffel (см. README).</div>' : '';
+  $('#status').innerHTML = demo + `Найдено поездок: ${r.trips.length}. Просмотрено вариантов: ${r.considered}, запросов: ${r.requests} (из кэша ${r.log.filter((l) => l.cached).length}).
     <details><summary>Что отброшено и почему</summary><table>${rej.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('') || '<tr><td>ничего</td></tr>'}</table>
     ${errs.length ? `<p>Ошибки запросов (${errs.length}):</p><table>${errs.slice(0, 10).map((e) => `<tr><td>${esc(e.from)}→${esc(e.to)} ${esc(e.date)}</td><td>${esc(e.error)}</td></tr>`).join('')}</table>` : ''}</details>`;
   if (!r.trips.length) {
@@ -198,7 +441,7 @@ function render(r) {
     <div class="trip-head">
       <span class="price">${eur(t.money)}</span>
       <span>в пути ${dur(t.minutes)}</span>
-      <span>${t.days} дн.</span>
+      <span>${t.days} ${plural(t.days, 'день', 'дня', 'дней')}</span>
       ${t.tags.map((x) => `<span class="tag good">${esc(x)}</span>`).join('')}
       ${t.pareto ? '<span class="tag" title="Нет варианта одновременно дешевле и быстрее">без компромисса</span>' : ''}
     </div>
@@ -209,28 +452,13 @@ function render(r) {
   </div>`).join('');
 }
 
-f.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  let query;
-  try { query = readQuery(); } catch (err) { $('#status').innerHTML = `<div class="errors">Не разобрать JSON в расширенных настройках: ${esc(err.message)}</div>`; return; }
-  try { localStorage.setItem('origins', f.origins.value); } catch {}
-  const providerIds = [...f.querySelectorAll('[name=prov]:checked')].map((x) => x.value);
-  $('#go').disabled = true;
-  $('#status').textContent = 'Ищу… с настоящими источниками это занимает до минуты.';
-  $('#results').innerHTML = '';
-  try {
-    const res = await fetch('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, providerIds }) });
-    const body = await res.json();
-    if (!res.ok) $('#status').innerHTML = `<div class="errors">${body.errors.map(esc).join('<br>')}</div>`;
-    else render(body);
-  } catch (err) {
-    $('#status').innerHTML = `<div class="errors">${esc(err.message)}</div>`;
-  } finally {
-    $('#go').disabled = false;
-  }
+fetch('/api/config').then((r) => r.json()).then((c) => {
+  preset = c.preset;
+  providers = c.providers;
+  state = { ...fromPreset(preset), ...(store.get('state') ?? {}) };
+  renderAll();
+  changed();
 });
-
-fetch('/api/config').then((r) => r.json()).then((c) => load(c.preset, c.providers));
 </script>
 </body>
 </html>

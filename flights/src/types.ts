@@ -83,9 +83,6 @@ export interface GroundSettings {
 export interface Query {
   origins: string[];
   destinationName: string;
-  /** Для подписей: «в Валенсии», «из Валенсии». */
-  destinationIn: string;
-  destinationFrom: string;
   /** Аэропорты прилёта; для каждого — путь до конечного города. */
   arrivals: GroundLeg[];
   departFrom: string;
@@ -93,6 +90,8 @@ export interface Query {
   tripDays: { min: number; max: number };
   /** false — можно прилететь в Мадрид, а улететь из Барселоны. */
   returnSameAirport: boolean;
+  /** false — можно улететь из Копенгагена, а вернуться в Мальмё. */
+  returnSameOrigin: boolean;
   maxStops: number;
   layover: LayoverRules;
   ground: GroundSettings;
