@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Поиск перелётов</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1f2933; --muted: #66727f; --line: #e1e5ea;
+    --accent: #2f6f8f; --accent-soft: #e3eff5; --good: #2e7d4f; --good-soft: #e5f3ea;
+    --night: #4b3f8f; --night-soft: #ebe8f7; --warn: #a3541b; --warn-soft: #fbeee3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161b; --card: #1a2027; --text: #e4e8ec; --muted: #9aa5b1; --line: #2c343d;
+      --accent: #7fb8d4; --accent-soft: #1f3340; --good: #7cc89a; --good-soft: #1c3226;
+      --night: #b0a6ef; --night-soft: #2a2648; --warn: #e8a372; --warn-soft: #3a2a1d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  form { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 16px; }
+  .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
+  textarea { font: 12px/1.4 ui-monospace, monospace; min-height: 220px; }
+  fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0; }
+  legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  .checks label { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+  .checks input { width: auto; }
+  button { font: inherit; font-weight: 600; background: var(--accent); color: var(--card); border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer; justify-self: start; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .hint { font-size: 12px; color: var(--muted); }
+  .status { margin: 20px 0 10px; color: var(--muted); }
+  .errors { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 10px 12px; }
+  .trip { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 12px 0; }
+  .trip-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+  .price { font-size: 22px; font-weight: 700; }
+  .tag { font-size: 12px; border-radius: 99px; padding: 2px 8px; background: var(--accent-soft); color: var(--accent); }
+  .tag.good { background: var(--good-soft); color: var(--good); }
+  .leg { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; display: grid; gap: 4px; }
+  .leg-title { font-weight: 600; }
+  .seg { font-variant-numeric: tabular-nums; }
+  .lay { display: inline-block; font-size: 12px; border-radius: 6px; padding: 1px 7px; margin: 2px 0; background: var(--accent-soft); color: var(--accent); }
+  .lay.night { background: var(--night-soft); color: var(--night); }
+  .ground { font-size: 13px; color: var(--muted); }
+  .ground.over { color: var(--warn); }
+  .links { font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  a { color: var(--accent); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  table { border-collapse: collapse; font-size: 13px; }
+  td { padding: 2px 10px 2px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Поиск перелётов с умными пересадками</h1>
+  <p class="sub">Сравнивает прилёт в несколько аэропортов с дорогой до конечного города и отбрасывает неудобные пересадки.</p>
+
+  <form id="f">
+    <div class="row">
+      <label>Откуда (коды IATA через запятую)<input name="origins" placeholder="например ARN или STO, LED" required></label>
+      <label>Вылет с<input name="departFrom" type="date"></label>
+      <label>по<input name="departTo" type="date"></label>
+      <label>Дней в поездке, от<input name="daysMin" type="number" min="1"></label>
+      <label>до<input name="daysMax" type="number" min="1"></label>
+    </div>
+
+    <fieldset>
+      <legend>Куда прилетать</legend>
+      <div class="checks" id="arrivals"></div>
+      <div class="checks" style="margin-top:8px"><label><input type="checkbox" name="returnSameAirport"> улетать обратно из того же аэропорта</label></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Пересадки</legend>
+      <div class="row">
+        <label>Дневная — не длиннее, ч<input name="dayMax" type="number" step="0.5" min="0"></label>
+        <label>Ночная — не короче, ч<input name="nightMin" type="number" step="0.5" min="0"></label>
+        <label>Ночь с<input name="nightStart" type="time"></label>
+        <label>до<input name="nightEnd" type="time"></label>
+        <label>Стыковка не короче, мин<input name="minConnect" type="number" min="0"></label>
+        <label>Пересадок не больше<select name="maxStops"><option value="0">0 — только прямые</option><option value="1">1</option><option value="2">2</option></select></label>
+      </div>
+      <p class="hint">Пересадка ночная, если хотя бы <span id="overlap"></span> мин приходятся на ночное окно. Короткая ночная пересадка — ночь на скамейке, поэтому её отбрасываем; длинная — время на отель.</p>
+    </fieldset>
+
+    <div class="row">
+      <label>Цена часа в дороге, €<input name="valueOfHour" type="number" min="0"></label>
+      <fieldset style="grid-column: span 2"><legend>Источники</legend><div class="checks" id="providers"></div></fieldset>
+    </div>
+    <p class="hint">Цена часа решает, сколько вы готовы доплатить за более быстрый вариант. 0 — только цена.</p>
+
+    <details>
+      <summary>Поезда, трансферы, отель, курсы валют — всё, что не в форме</summary>
+      <p class="hint">Цены и время поездов — ориентировочные. Поправьте под даты, если уже смотрели расписание Renfe.</p>
+      <textarea id="advanced" spellcheck="false"></textarea>
+    </details>
+
+    <button id="go">Искать</button>
+  </form>
+
+  <div id="status" class="status"></div>
+  <div id="results"></div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const f = $('#f');
+let preset;
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dur = (m) => { const h = Math.floor(m / 60), r = Math.round(m % 60); return r ? `${h} ч ${r} мин` : `${h} ч`; };
+const time = (s) => s.slice(11, 16);
+const day = (s) => new Date(s.slice(0, 10) + 'T12:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', weekday: 'short' });
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+const eur = (n) => `${Math.round(n)} €`;
+
+function load(p, providers) {
+  preset = p;
+  const saved = (() => { try { return localStorage.getItem('origins'); } catch { return null; } })();
+  f.origins.value = (p.origins.length ? p.origins.join(', ') : saved) ?? '';
+  f.departFrom.value = p.departFrom; f.departTo.value = p.departTo;
+  f.daysMin.value = p.tripDays.min; f.daysMax.value = p.tripDays.max;
+  f.returnSameAirport.checked = p.returnSameAirport;
+  f.dayMax.value = p.layover.dayMaxMin / 60; f.nightMin.value = p.layover.nightMinMin / 60;
+  f.nightStart.value = p.layover.nightStart; f.nightEnd.value = p.layover.nightEnd;
+  f.minConnect.value = p.layover.minConnectMin; f.maxStops.value = p.maxStops;
+  f.valueOfHour.value = p.valueOfHour;
+  $('#overlap').textContent = p.layover.nightOverlapMin;
+  $('#arrivals').innerHTML = p.arrivals.map((a) =>
+    `<label><input type="checkbox" name="arr" value="${a.airport}" checked> ${esc(a.airport)} — ${esc(a.label)}</label>`).join('');
+  $('#providers').innerHTML = providers.map((pr, i) =>
+    `<label><input type="checkbox" name="prov" value="${pr.id}" ${i === 0 ? 'checked' : ''}> ${esc(pr.label)}</label>`).join('');
+  const { arrivals, ground, fx, currency } = p;
+  $('#advanced').value = JSON.stringify({ ground, currency, fx, arrivals }, null, 2);
+}
+
+function readQuery() {
+  const adv = JSON.parse($('#advanced').value);
+  const chosen = [...f.querySelectorAll('[name=arr]:checked')].map((x) => x.value);
+  return {
+    ...preset,
+    ...adv,
+    origins: f.origins.value.toUpperCase().split(/[\s,;]+/).filter(Boolean),
+    arrivals: adv.arrivals.filter((a) => chosen.includes(a.airport)),
+    departFrom: f.departFrom.value, departTo: f.departTo.value,
+    tripDays: { min: +f.daysMin.value, max: +f.daysMax.value },
+    returnSameAirport: f.returnSameAirport.checked,
+    maxStops: +f.maxStops.value,
+    valueOfHour: +f.valueOfHour.value,
+    layover: {
+      ...preset.layover,
+      dayMaxMin: +f.dayMax.value * 60, nightMinMin: +f.nightMin.value * 60,
+      nightStart: f.nightStart.value, nightEnd: f.nightEnd.value,
+      minConnectMin: +f.minConnect.value,
+    },
+  };
+}
+
+function legHtml(l, title) {
+  const s = l.itinerary.segments;
+  const segs = s.map((x, i) => {
+    const lay = l.layovers[i] ? `<div><span class="lay ${l.layovers[i].kind}">${l.layovers[i].kind === 'night' ? 'ночная' : 'дневная'} пересадка в ${esc(l.layovers[i].airport)}: ${dur(l.layovers[i].minutes)}</span></div>` : '';
+    return `<div class="seg">${time(x.dep)} ${esc(x.from)} → ${time(x.arr)} ${esc(x.to)} · ${esc(x.carrier)} ${esc(x.flightNo)}</div>${lay}`;
+  }).join('');
+  const g = l.ground;
+  const groundTxt = l.dir === 'out'
+    ? `${esc(cap(preset.destinationIn))} к ${time(g.at)}${g.at.slice(0, 10) !== s.at(-1).arr.slice(0, 10) ? ' (на следующий день)' : ''}: ${g.notes.map(esc).join(' → ')} · ${eur(g.cost)}`
+    : `Выезд ${esc(preset.destinationFrom)} в ${time(g.at)}${g.at.slice(0, 10) !== s[0].dep.slice(0, 10) ? ' (накануне)' : ''}: ${g.notes.map(esc).join(' → ')} · ${eur(g.cost)}`;
+  const links = [...l.links, ...l.groundLinks].map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a>`).join('');
+  return `<div class="leg">
+    <div class="leg-title">${title}: ${day(s[0].dep)} · ${esc(l.groundLabel)} · билет ${eur(l.flightPrice)} · ${dur(l.itinerary.totalMin)} в воздухе и пересадках</div>
+    ${segs}
+    <div class="ground ${g.overnight ? 'over' : ''}">${groundTxt}</div>
+    ${l.itinerary.warnings.length ? `<div class="ground over">${l.itinerary.warnings.map(esc).join('; ')}</div>` : ''}
+    <div class="links">${links}</div>
+  </div>`;
+}
+
+function render(r) {
+  const errs = r.log.filter((l) => l.error);
+  const rej = Object.entries(r.rejected).sort((a, b) => b[1] - a[1]);
+  const demo = r.log.some((l) => l.provider === 'mock')
+    ? '<div class="errors">Это демо-данные: рейсы и цены выдуманы. Для настоящих цен добавьте ключ SerpAPI или Duffel (см. README).</div>' : '';
+  $('#status').innerHTML = demo + `Запросов: ${r.requests} (из кэша ${r.log.filter((l) => l.cached).length}), вариантов просмотрено: ${r.considered}, за ${(r.ms / 1000).toFixed(1)} с.
+    <details><summary>Что отброшено и почему</summary><table>${rej.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('') || '<tr><td>ничего</td></tr>'}</table>
+    ${errs.length ? `<p>Ошибки запросов (${errs.length}):</p><table>${errs.slice(0, 10).map((e) => `<tr><td>${esc(e.from)}→${esc(e.to)} ${esc(e.date)}</td><td>${esc(e.error)}</td></tr>`).join('')}</table>` : ''}</details>`;
+  if (!r.trips.length) {
+    $('#results').innerHTML = '<p>Под все условия ничего не подошло. Посмотрите выше, что отброшено чаще всего, и ослабьте это условие.</p>';
+    return;
+  }
+  $('#results').innerHTML = r.trips.map((t) => `<div class="trip">
+    <div class="trip-head">
+      <span class="price">${eur(t.money)}</span>
+      <span>в пути ${dur(t.minutes)}</span>
+      <span>${t.days} дн.</span>
+      ${t.tags.map((x) => `<span class="tag good">${esc(x)}</span>`).join('')}
+      ${t.pareto ? '<span class="tag" title="Нет варианта одновременно дешевле и быстрее">без компромисса</span>' : ''}
+    </div>
+    ${legHtml(t.out, 'Туда')}
+    ${legHtml(t.in, 'Обратно')}
+    <div class="leg"><div class="links">Купить парой: ${t.links.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a>`).join('')}</div>
+    <div class="hint">Сумма — два билета в одну сторону плюс дорога. Туда-обратно одним билетом бывает дешевле: сверьте по ссылкам.</div></div>
+  </div>`).join('');
+}
+
+f.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  let query;
+  try { query = readQuery(); } catch (err) { $('#status').innerHTML = `<div class="errors">Не разобрать JSON в расширенных настройках: ${esc(err.message)}</div>`; return; }
+  try { localStorage.setItem('origins', f.origins.value); } catch {}
+  const providerIds = [...f.querySelectorAll('[name=prov]:checked')].map((x) => x.value);
+  $('#go').disabled = true;
+  $('#status').textContent = 'Ищу… с настоящими источниками это занимает до минуты.';
+  $('#results').innerHTML = '';
+  try {
+    const res = await fetch('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, providerIds }) });
+    const body = await res.json();
+    if (!res.ok) $('#status').innerHTML = `<div class="errors">${body.errors.map(esc).join('<br>')}</div>`;
+    else render(body);
+  } catch (err) {
+    $('#status').innerHTML = `<div class="errors">${esc(err.message)}</div>`;
+  } finally {
+    $('#go').disabled = false;
+  }
+});
+
+fetch('/api/config').then((r) => r.json()).then((c) => load(c.preset, c.providers));
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+{
+  "_comment": "Валенсия на 8–10 дней, вылет 20–25 декабря. Цены и время поездов — ориентировочные (декабрь 2026, эконом, заранее), правьте под себя. Сам аэропорт вылета задаётся в форме или флагом --from.",
+  "origins": [],
+  "destinationName": "Валенсия",
+  "destinationIn": "в Валенсии",
+  "destinationFrom": "из Валенсии",
+  "departFrom": "2026-12-20",
+  "departTo": "2026-12-25",
+  "tripDays": { "min": 8, "max": 10 },
+  "returnSameAirport": false,
+  "maxStops": 2,
+  "valueOfHour": 15,
+  "currency": "EUR",
+  "fx": { "USD": 0.87, "GBP": 1.16, "SEK": 0.091, "NOK": 0.086, "DKK": 0.134, "CHF": 1.07, "PLN": 0.235 },
+  "layover": {
+    "nightStart": "23:00",
+    "nightEnd": "06:00",
+    "nightOverlapMin": 60,
+    "dayMaxMin": 210,
+    "nightMinMin": 600,
+    "minConnectMin": 45,
+    "allowAirportChange": false
+  },
+  "ground": { "exitMin": 40, "checkinMin": 120, "hotelCost": 90 },
+  "arrivals": [
+    {
+      "airport": "VLC",
+      "label": "Валенсия напрямую",
+      "access": { "name": "Метро L3/L5 аэропорт ↔ центр", "minutes": 25, "cost": 5 },
+      "rail": null,
+      "bookingLinks": []
+    },
+    {
+      "airport": "MAD",
+      "label": "Мадрид + поезд",
+      "access": { "name": "Cercanías C1 Барахас T4 ↔ Atocha (с билетом Renfe бесплатно)", "minutes": 30, "cost": 2.6 },
+      "rail": { "name": "AVE / Iryo / Ouigo Мадрид ↔ Валенсия Joaquín Sorolla", "minutes": 115, "cost": 25, "firstDep": "06:40", "lastDep": "21:30", "headwayMin": 45 },
+      "bookingLinks": [
+        { "label": "Renfe", "url": "https://www.renfe.com/es/en" },
+        { "label": "Iryo", "url": "https://iryo.eu/en/home" },
+        { "label": "Ouigo", "url": "https://www.ouigo.com/es/en" },
+        { "label": "Trainline", "url": "https://www.thetrainline.com/en/train-times/madrid-to-valencia" }
+      ]
+    },
+    {
+      "airport": "BCN",
+      "label": "Барселона + поезд",
+      "access": { "name": "Rodalies R2 Nord / Aerobús аэропорт ↔ Sants", "minutes": 35, "cost": 6 },
+      "rail": { "name": "Euromed / Intercity Барселона ↔ Валенсия", "minutes": 180, "cost": 30, "firstDep": "06:30", "lastDep": "20:30", "headwayMin": 90 },
+      "bookingLinks": [
+        { "label": "Renfe", "url": "https://www.renfe.com/es/en" },
+        { "label": "Trainline", "url": "https://www.thetrainline.com/en/train-times/barcelona-to-valencia" }
+      ]
+    },
+    {
+      "airport": "ALC",
+      "label": "Аликанте + поезд",
+      "access": { "name": "Автобус C6 аэропорт ↔ вокзал Alicante-Terminal", "minutes": 35, "cost": 3.85 },
+      "rail": { "name": "Intercity / Alvia Аликанте ↔ Валенсия", "minutes": 125, "cost": 20, "firstDep": "06:30", "lastDep": "21:00", "headwayMin": 90 },
+      "bookingLinks": [
+        { "label": "Renfe", "url": "https://www.renfe.com/es/en" },
+        { "label": "ALSA (автобус из аэропорта)", "url": "https://www.alsa.com/en/" },
+        { "label": "Trainline", "url": "https://www.thetrainline.com/en/train-times/alicante-to-valencia" }
+      ]
+    }
+  ]
+}
