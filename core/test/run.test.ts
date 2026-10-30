@@ -28,8 +28,8 @@ test('прогресс двигают завершённые направлен�
   const early = runProgress({ stage: 'search', anglesDone: 0, anglesTotal: 4, elapsedSec: 5, estimateSec: 200 });
   const half = runProgress({ stage: 'search', anglesDone: 2, anglesTotal: 4, elapsedSec: 5, estimateSec: 200 });
   assert.ok(half.fraction > early.fraction, 'два направления из четырёх дальше нуля');
-  assert.equal(half.detail, '2 из 4 направлений');
-  assert.equal(early.detail, '0 из 4 направлений');
+  assert.equal(half.detail, '2 of 4 search directions');
+  assert.equal(early.detail, '0 of 4 search directions');
 });
 
 test('таймер не даёт полосе замереть, но не обгоняет реальный факт', () => {
@@ -67,10 +67,10 @@ test('остаток времени уменьшается по мере про�
 });
 
 test('humanDuration говорит по-человечески', () => {
-  assert.match(humanDuration(20), /секунд/);
-  assert.equal(humanDuration(60), 'около минуты');
-  assert.match(humanDuration(150), /около 3 минут|около 2 минут/);
-  assert.match(humanDuration(0), /секунд/);
+  assert.match(humanDuration(20), /seconds/);
+  assert.equal(humanDuration(60), 'about a minute');
+  assert.match(humanDuration(150), /about 3 minutes|about 2 minutes/);
+  assert.match(humanDuration(0), /seconds/);
 });
 
 test('итог направлений: ошибка, пустой ответ и отброшенное названы по отдельности', () => {
@@ -80,10 +80,10 @@ test('итог направлений: ошибка, пустой ответ и 
     { angle: 'Head of Supply Chain', returned: 4, kept: 1 },
     { angle: 'Директор по производству', returned: 3, kept: 3 },
   ]);
-  assert.match(notes[0], /«COO в логистике»: ошибка — Ответ модели обрезан/);
-  assert.match(notes[1], /не нашла ни одного/);
-  assert.match(notes[2], /вернула 4, отброшено 3/);
-  assert.equal(notes[3], '«Директор по производству»: найдено 3');
+  assert.match(notes[0], /“COO в логистике”: error — Ответ модели обрезан/);
+  assert.match(notes[1], /found no places/);
+  assert.match(notes[2], /returned 4, dropped 3/);
+  assert.equal(notes[3], '“Директор по производству”: found 3');
 });
 
 test('след поиска: запросы и домены источников, частые первыми; мусор не ломает разбор', () => {
@@ -107,9 +107,9 @@ test('итог прохода: вакансии и гипотезы раздел
     angle: 'COO', pass: 'vacancies', returned: 3, kept: 3, vacancies: 3, hypotheses: 0,
     queries: ['COO jobs Oslo'], domains: ['finn.no', 'linkedin.com'],
   }]);
-  assert.equal(line, '«COO» · вакансии: найдено 3 (вакансий 3, гипотез 0). запросы: «COO jobs Oslo»; источники: finn.no, linkedin.com');
+  assert.equal(line, '“COO” · vacancies: found 3 (vacancies 3, hypotheses 0). queries: “COO jobs Oslo”; sources: finn.no, linkedin.com');
   const [none] = describeAngleOutcomes([{ angle: 'COO', pass: 'vacancies', returned: 0, kept: 0, queries: [] }]);
-  assert.match(none, /не нашла ни одного места\. источников нет/);
+  assert.match(none, /found no places\. no sources/);
 });
 
 test('домены вакансий: в пределах лимита web_search и без схемы в адресе', () => {

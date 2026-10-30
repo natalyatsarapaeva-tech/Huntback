@@ -9,27 +9,81 @@ import type { Profile as P, Fact, AuditReport, LanguageLevel, WorkAuth } from '.
 import { CEFR_ORDER } from '@huntback/core';
 import { Card, Field, Chip } from '../components/ui.tsx';
 
-export function FactList({ facts, onPatch }: { facts: Fact[]; onPatch: (id: string, patch: Partial<Fact>) => void }) {
+export function FactList({ facts, onPatch, onDelete }: {
+  facts: Fact[];
+  onPatch: (id: string, patch: Partial<Fact>) => void;
+  /** Без обработчика удаление не показывается (онбординг). */
+  onDelete?: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <div>
       {facts.map(f => (
-        <div key={f.id} className="fact">
-          <input className="checkbox" type="checkbox" checked={f.confirmed}
-            aria-label={`Подтвердить факт: ${f.action}`}
-            onChange={e => onPatch(f.id, { confirmed: e.target.checked })} />
-          <div className="fact-body">
-            <div className="fact-action">{f.action}</div>
-            {f.result && <div className="fact-result">{f.result}</div>}
-            <div className="fact-src">« {f.source_hint} »</div>
-          </div>
-          <div className="stack gap-6" style={{ alignItems: 'flex-end' }}>
-            {f.quantified
-              ? <Chip tone="good">{f.metric_value} {f.metric_unit}</Chip>
-              : <Chip tone="mid" title="Измеримый результат — самый сильный сигнал на скрининге">без числа</Chip>}
-            {!!f.scale_tags.length && <span className="small muted">{f.scale_tags.join(' · ')}</span>}
-          </div>
-        </div>
+        editing === f.id
+          ? <FactEditor key={f.id} fact={f}
+              onSave={patch => { onPatch(f.id, patch); setEditing(null); }}
+              onCancel={() => setEditing(null)} />
+          : (
+            <div key={f.id} className="fact">
+              <input className="checkbox" type="checkbox" checked={f.confirmed}
+                aria-label={`Confirm fact: ${f.action}`}
+                onChange={e => onPatch(f.id, { confirmed: e.target.checked })} />
+              <div className="fact-body">
+                <div className="fact-action">{f.action}</div>
+                {f.how && <div className="fact-result">{f.how}</div>}
+                {f.result && <div className="fact-result">{f.result}</div>}
+                <div className="fact-src">“ {f.source_hint} ”</div>
+                <div className="flex gap-8 mt-8">
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(f.id)}>Edit</button>
+                  {onDelete && (
+                    <button className="btn btn-ghost btn-sm"
+                      onClick={() => { if (confirm(`Delete the fact “${f.action}”?`)) onDelete(f.id); }}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="stack gap-6" style={{ alignItems: 'flex-end' }}>
+                {f.quantified
+                  ? <Chip tone="good">{f.metric_value} {f.metric_unit}</Chip>
+                  : <Chip tone="mid" title="A measurable result is the strongest signal at screening">no number</Chip>}
+                {!!f.scale_tags.length && <span className="small muted">{f.scale_tags.join(' · ')}</span>}
+              </div>
+            </div>
+          )
       ))}
+    </div>
+  );
+}
+
+/** Правка текста факта. Цитата-источник не правится: по ней факт сверяется с резюме. */
+function FactEditor({ fact, onSave, onCancel }: {
+  fact: Fact; onSave: (patch: Partial<Fact>) => void; onCancel: () => void;
+}) {
+  const [action, setAction] = useState(fact.action);
+  const [how, setHow] = useState(fact.how ?? '');
+  const [result, setResult] = useState(fact.result ?? '');
+  return (
+    <div className="fact">
+      <div className="fact-body">
+        <Field label="Action">
+          <input className="input" value={action} onChange={e => setAction(e.target.value)} />
+        </Field>
+        <Field label="How">
+          <input className="input" value={how} onChange={e => setHow(e.target.value)} />
+        </Field>
+        <Field label="Result" hint="Include the number — quantified facts carry the most weight">
+          <input className="input" value={result} onChange={e => setResult(e.target.value)} />
+        </Field>
+        <div className="fact-src">“ {fact.source_hint} ”</div>
+        <div className="flex gap-8 mt-8">
+          <button className="btn btn-primary btn-sm" disabled={!action.trim()}
+            onClick={() => onSave({ action: action.trim(), how: how.trim(), result: result.trim() })}>
+            Save
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -39,15 +93,15 @@ function AuditPanel({ audit, busy, onRun }: { audit: AuditReport | null; busy: b
     <Card>
       <div className="card-head">
         <div style={{ flex: 1 }}>
-          <h3>Аудит профиля</h3>
-          <div className="sub">Что в вашем резюме работает на скрининге, а чего не хватает</div>
+          <h3>Profile audit</h3>
+          <div className="sub">What in your resume works at screening, and what is missing</div>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={onRun} disabled={busy}>
-          {busy ? 'Считаю…' : 'Пересчитать'}
+          {busy ? 'Calculating…' : 'Recalculate'}
         </button>
       </div>
       <div className="card-pad">
-        {!audit && <p className="small muted">Аудит ещё не запускался.</p>}
+        {!audit && <p className="small muted">The audit hasn’t been run yet.</p>}
         {audit && (
           <>
             <div className="metrics">
@@ -55,7 +109,7 @@ function AuditPanel({ audit, busy, onRun }: { audit: AuditReport | null; busy: b
                 <div key={m.id} className={`metric metric--${m.status}`}>
                   <div className="metric-label"><span className="metric-dot" aria-hidden />{m.label}</div>
                   <div className="metric-value">
-                    {m.display ?? (m.status === 'ok' ? 'есть' : '—')}
+                    {m.display ?? (m.status === 'ok' ? 'yes' : '—')}
                   </div>
                   <div className="metric-detail">{m.detail}</div>
                 </div>
@@ -63,7 +117,7 @@ function AuditPanel({ audit, busy, onRun }: { audit: AuditReport | null; busy: b
             </div>
             {!!audit.tasks.length && (
               <>
-                <div className="section-label mt-24">Что исправить — по убыванию эффекта</div>
+                <div className="section-label mt-24">What to fix — highest impact first</div>
                 <div className="tasks">
                   {audit.tasks.map(t => <div key={t.id} className="task"><span>{t.text}</span></div>)}
                 </div>
@@ -85,11 +139,12 @@ function useAutosave<T>(value: T, save: (v: T) => void, ms = 700) {
   }, [value]);
 }
 
-export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, onPatchFact }: {
+export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDeleteFact }: {
   profile: P; facts: Fact[]; audit: AuditReport | null; busy: boolean;
   onSave: (patch: Partial<P>) => void;
   onAudit: () => void;
   onPatchFact: (id: string, patch: Partial<Fact>) => void;
+  onDeleteFact: (id: string) => void;
 }) {
   const [draft, setDraft] = useState(profile);
   useEffect(() => setDraft(profile), [profile.resume_text]);
@@ -102,18 +157,18 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
     <div className="stack gap-20">
       <div className="flex items-center between wrap gap-12">
         <div>
-          <h1>Профиль</h1>
-          <p className="muted small mt-8">Изменения сохраняются сами</p>
+          <h1>Profile</h1>
+          <p className="muted small mt-8">Changes save automatically</p>
         </div>
       </div>
 
       <Card className="card-pad">
-        <Field label="Резюме">
+        <Field label="Resume">
           <textarea className="textarea" style={{ minHeight: 220 }} value={draft.resume_text}
             onChange={e => set('resume_text', e.target.value)} />
         </Field>
-        <Field label="Свободные сведения"
-          hint="Чему научились, кого вырастили, почему были перерывы. Часто сильнее самого резюме.">
+        <Field label="Additional notes"
+          hint="What you learned, whom you grew, why there were gaps. Often stronger than the resume itself.">
           <textarea className="textarea" value={draft.extras_text} onChange={e => set('extras_text', e.target.value)} />
         </Field>
       </Card>
@@ -123,72 +178,72 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
       <Card>
         <div className="card-head">
           <div style={{ flex: 1 }}>
-            <h3>Банк фактов</h3>
+            <h3>Fact bank</h3>
             <div className="sub">
-              Подтверждено {facts.filter(f => f.confirmed).length} из {facts.length}.
-              В документы попадают только подтверждённые.
+              {facts.filter(f => f.confirmed).length} of {facts.length} confirmed.
+              Only confirmed facts go into documents.
             </div>
           </div>
         </div>
         <div className="card-pad">
-          {facts.length ? <FactList facts={facts} onPatch={onPatchFact} />
-            : <p className="small muted">Пусто — запустите аудит, он разберёт резюме на факты.</p>}
+          {facts.length ? <FactList facts={facts} onPatch={onPatchFact} onDelete={onDeleteFact} />
+            : <p className="small muted">Empty — run the audit and it will break the resume down into facts.</p>}
         </div>
       </Card>
 
       <Card>
         <div className="card-head">
           <div style={{ flex: 1 }}>
-            <h3>Что снимает сомнения</h3>
-            <div className="sub">Эти поля закрывают вопросы, которые почти никогда не задают вслух</div>
+            <h3>What removes doubts</h3>
+            <div className="sub">These fields answer questions that are almost never asked out loud</div>
           </div>
         </div>
         <div className="card-pad">
-          <div className="section-label">Масштаб управления</div>
+          <div className="section-label">Management scale</div>
           <div className="row">
-            <Field label="Максимум людей в подчинении">
+            <Field label="Max direct and indirect reports">
               <input className="input" inputMode="numeric" value={scale.team_max ?? ''}
                 onChange={e => set('scale', { ...scale, team_max: e.target.value ? Number(e.target.value) : null })} />
             </Field>
-            <Field label="Из них менеджеров">
+            <Field label="Of them, managers">
               <input className="input" inputMode="numeric" value={scale.managers_max ?? ''}
                 onChange={e => set('scale', { ...scale, managers_max: e.target.value ? Number(e.target.value) : null })} />
             </Field>
-            <Field label="Бюджет, EUR">
+            <Field label="Budget, EUR">
               <input className="input" inputMode="numeric" value={scale.budget_max ?? ''}
                 onChange={e => set('scale', { ...scale, budget_max: e.target.value ? Number(e.target.value) : null })} />
             </Field>
-            <Field label="География">
+            <Field label="Geography">
               <input className="input" value={scale.geo_scope ?? ''}
-                onChange={e => set('scale', { ...scale, geo_scope: e.target.value })} placeholder="3 страны" />
+                onChange={e => set('scale', { ...scale, geo_scope: e.target.value })} placeholder="3 countries" />
             </Field>
           </div>
 
-          <div className="section-label mt-16">Языки</div>
+          <div className="section-label mt-16">Languages</div>
           <LanguageEditor value={draft.languages} onChange={v => set('languages', v)} />
 
-          <div className="section-label mt-24">Право на работу</div>
+          <div className="section-label mt-24">Work authorization</div>
           <WorkAuthEditor value={draft.work_auth} onChange={v => set('work_auth', v)} />
 
-          <div className="section-label mt-24">Прочее</div>
+          <div className="section-label mt-24">Other</div>
           <div className="row">
-            <Field label="Готовность к релокации">
+            <Field label="Open to relocation">
               <select className="select" value={draft.relocation?.ready ?? 'no'}
                 onChange={e => set('relocation', { ready: e.target.value as 'yes' | 'no' | 'conditional', package_needed: draft.relocation?.package_needed ?? false })}>
-                <option value="yes">Готова</option>
-                <option value="conditional">При условиях</option>
-                <option value="no">Не готова</option>
+                <option value="yes">Yes</option>
+                <option value="conditional">Under conditions</option>
+                <option value="no">No</option>
               </select>
             </Field>
             <Field label="LinkedIn">
               <input className="input" value={draft.linkedin_url} onChange={e => set('linkedin_url', e.target.value)} />
             </Field>
-            <Field label="Фото в резюме" hint="В DACH ожидается, в UK и Скандинавии — нет">
+            <Field label="Photo on the resume" hint="Expected in DACH, not in the UK or the Nordics">
               <select className="select" value={draft.photo_policy}
                 onChange={e => set('photo_policy', e.target.value as P['photo_policy'])}>
-                <option value="auto">По стране места</option>
-                <option value="never">Никогда</option>
-                <option value="always">Всегда</option>
+                <option value="auto">By the place’s country</option>
+                <option value="never">Never</option>
+                <option value="always">Always</option>
               </select>
             </Field>
           </div>
@@ -203,19 +258,19 @@ function LanguageEditor({ value, onChange }: { value: LanguageLevel[]; onChange:
     <div className="stack gap-8">
       {value.map((l, i) => (
         <div key={i} className="row" style={{ alignItems: 'flex-end' }}>
-          <input className="input" value={l.lang} aria-label="Язык"
+          <input className="input" value={l.lang} aria-label="Language"
             onChange={e => onChange(value.map((x, j) => (j === i ? { ...x, lang: e.target.value } : x)))} />
-          <select className="select" value={l.cefr} aria-label="Уровень CEFR" style={{ flex: '0 1 120px' }}
+          <select className="select" value={l.cefr} aria-label="CEFR level" style={{ flex: '0 1 120px' }}
             onChange={e => onChange(value.map((x, j) => (j === i ? { ...x, cefr: e.target.value as LanguageLevel['cefr'] } : x)))}>
             {CEFR_ORDER.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <button className="btn btn-ghost btn-sm" style={{ flex: '0 0 auto' }}
-            onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Удалить язык">Удалить</button>
+            onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Remove language">Remove</button>
         </div>
       ))}
       <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }}
-        onClick={() => onChange([...value, { lang: '', cefr: 'B2' }])}>Добавить язык</button>
-      <p className="field-hint">Уровень по CEFR, а не «свободно»: требование вакансии сравнивается именно с ним.</p>
+        onClick={() => onChange([...value, { lang: '', cefr: 'B2' }])}>Add language</button>
+      <p className="field-hint">A CEFR level, not “fluent”: job requirements are compared against it.</p>
     </div>
   );
 }
@@ -225,21 +280,21 @@ function WorkAuthEditor({ value, onChange }: { value: WorkAuth[]; onChange: (v: 
     <div className="stack gap-8">
       {value.map((w, i) => (
         <div key={i} className="row" style={{ alignItems: 'flex-end' }}>
-          <input className="input" value={w.region} aria-label="Регион" placeholder="Sweden или EU"
+          <input className="input" value={w.region} aria-label="Region" placeholder="Sweden or EU"
             onChange={e => onChange(value.map((x, j) => (j === i ? { ...x, region: e.target.value } : x)))} />
-          <select className="select" value={w.status} aria-label="Статус"
+          <select className="select" value={w.status} aria-label="Status"
             onChange={e => onChange(value.map((x, j) => (j === i ? { ...x, status: e.target.value as WorkAuth['status'] } : x)))}>
-            <option value="citizen">Гражданство</option>
-            <option value="permit">Разрешение есть</option>
-            <option value="needs_sponsorship">Нужно спонсорство</option>
+            <option value="citizen">Citizenship</option>
+            <option value="permit">Have a permit</option>
+            <option value="needs_sponsorship">Need sponsorship</option>
           </select>
           <button className="btn btn-ghost btn-sm" style={{ flex: '0 0 auto' }}
-            onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Удалить регион">Удалить</button>
+            onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Remove region">Remove</button>
         </div>
       ))}
       <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }}
-        onClick={() => onChange([...value, { region: '', status: 'permit' }])}>Добавить регион</button>
-      <p className="field-hint">Главное сомнение при международной подаче. Снимается одной строкой в резюме.</p>
+        onClick={() => onChange([...value, { region: '', status: 'permit' }])}>Add region</button>
+      <p className="field-hint">The main doubt in an international application. One line in the resume removes it.</p>
     </div>
   );
 }

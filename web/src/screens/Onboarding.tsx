@@ -8,7 +8,7 @@ import type { Profile, Fact, AuditReport } from '../api/types.ts';
 import { Field, Card } from '../components/ui.tsx';
 import { FactList } from './Profile.tsx';
 
-const STEPS = ['Резюме', 'Периметр', 'Факты', 'Сомнения'] as const;
+const STEPS = ['Resume', 'Perimeter', 'Facts', 'Doubts'] as const;
 
 export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDone }: {
   profile: Profile; facts: Fact[]; audit: AuditReport | null; busy: boolean;
@@ -42,7 +42,7 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
 
   return (
     <div className="main main--narrow">
-      <div className="stepper" aria-label="Шаги настройки">
+      <div className="stepper" aria-label="Setup steps">
         {STEPS.map((s, i) => (
           <div key={s} className={`step ${i < step ? 'step--done' : i === step ? 'step--current' : ''}`}>
             <span className="step-n">{i < step ? '✓' : i + 1}</span>{s}
@@ -52,19 +52,19 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
 
       {step === 0 && (
         <Card className="card-pad">
-          <h1>Начнём с резюме</h1>
+          <h1>Let’s start with your resume</h1>
           <p className="muted mt-8" style={{ marginBottom: 20 }}>
-            Вставьте текст как есть — форматирование не важно. Из него приложение
-            соберёт банк фактов: он станет единственным источником для всех резюме
-            и писем, которые вы отсюда отправите.
+            Paste the text as is — formatting doesn’t matter. From it the app will build
+            a fact bank: the single source for every resume and letter
+            you send from here.
           </p>
-          <Field label="Резюме">
+          <Field label="Resume">
             <textarea className="textarea" style={{ minHeight: 260 }} value={resume}
               onChange={e => setResume(e.target.value)}
-              placeholder="Должность, компания, годы, чем занимались, что получилось…" />
+              placeholder="Title, company, years, what you did, what came of it…" />
           </Field>
-          <Field label="Свободные сведения — необязательно"
-            hint="То, чего в резюме нет: чему научились, кого вырастили, почему были перерывы, куда готовы переехать. Это часто оказывается сильнее самого резюме.">
+          <Field label="Additional notes — optional"
+            hint="What the resume doesn’t say: what you learned, whom you grew, why there were gaps, where you’d relocate. This is often stronger than the resume itself.">
             <textarea className="textarea" value={extras} onChange={e => setExtras(e.target.value)} />
           </Field>
         </Card>
@@ -72,33 +72,33 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
 
       {step === 1 && (
         <Card className="card-pad">
-          <h1>Где искать</h1>
+          <h1>Where to search</h1>
           <p className="muted mt-8" style={{ marginBottom: 20 }}>
-            Периметр — это грани вашего опыта, каждая из которых релевантна своим
-            ролям. Перечислите их через точку с запятой: чем их больше, тем шире
-            поиск смотрит.
+            The perimeter is the facets of your experience, each relevant to its own
+            roles. List them separated by semicolons: the more there are, the wider
+            the search looks.
           </p>
-          <Field label="Роли, которые вам интересны"
-            hint="Например: VP Operations; Head of Supply Chain; Director of Logistics">
+          <Field label="Roles you are interested in"
+            hint="For example: VP Operations; Head of Supply Chain; Director of Logistics">
             <textarea className="textarea" style={{ minHeight: 88 }} value={perimeter}
               onChange={e => setPerimeter(e.target.value)} />
           </Field>
           <div className="row">
-            <Field label="География" hint="Страны через запятую — по ним же проверяется право на работу">
+            <Field label="Geography" hint="Countries separated by commas — work authorization is checked against them">
               <input className="input" value={geo} onChange={e => setGeo(e.target.value)} placeholder="Sweden, Germany" />
             </Field>
-            <Field label="Отрасли в приоритете">
+            <Field label="Priority industries">
               <input className="input" value={industries} onChange={e => setIndustries(e.target.value)} />
             </Field>
           </div>
-          <Field label="Что исключить" hint="Компании, отрасли или форматы, которые точно не подходят">
+          <Field label="Exclude" hint="Companies, industries or formats that definitely don’t fit">
             <input className="input" value={exclude} onChange={e => setExclude(e.target.value)} />
           </Field>
-          <Field label="Охват поиска">
+          <Field label="Search breadth">
             <select className="select" value={breadth} onChange={e => setBreadth(e.target.value as Profile['breadth'])}>
-              <option value="narrow">Узкий — в основном опубликованные вакансии</option>
-              <option value="medium">Средний — вакансии и гипотезы поровну</option>
-              <option value="wide">Широкий — больше компаний, где роль ещё не открыта</option>
+              <option value="narrow">Narrow — mostly published vacancies</option>
+              <option value="medium">Medium — vacancies and hypotheses equally</option>
+              <option value="wide">Wide — more companies where the role isn’t open yet</option>
             </select>
           </Field>
         </Card>
@@ -106,20 +106,20 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
 
       {step === 2 && (
         <Card className="card-pad">
-          <h1>Подтвердите факты</h1>
+          <h1>Confirm the facts</h1>
           <p className="muted mt-8" style={{ marginBottom: 16 }}>
-            Вот что приложение нашло в вашем резюме. Отмеченные факты — и только
-            они — попадут в резюме и письма. Неотмеченное не будет использовано
-            нигде: это защита от того, чтобы модель приписала вам чужое достижение.
+            Here is what the app found in your resume. Checked facts — and only
+            those — go into resumes and letters. Anything unchecked is not used
+            anywhere: this keeps the model from crediting you with someone else’s achievement.
           </p>
           {busy && !facts.length && (
-            <p className="small muted">Разбираю резюме на факты… это занимает до минуты.</p>
+            <p className="small muted">Breaking the resume down into facts… this takes up to a minute.</p>
           )}
           {!!facts.length && (
             <>
               <p className="small muted" style={{ marginBottom: 12 }}>
-                Подтверждено {confirmed} из {facts.length}. Факты без числа подсвечены —
-                к ним стоит вспомнить цифру: измеримый результат сильнее любого прилагательного.
+                {confirmed} of {facts.length} confirmed. Facts without a number are highlighted —
+                try to recall a figure for them: a measurable result beats any adjective.
               </p>
               <FactList facts={facts} onPatch={onPatchFact} />
             </>
@@ -129,41 +129,41 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
 
       {step === 3 && (
         <Card className="card-pad">
-          <h1>Что снимает сомнения</h1>
+          <h1>What removes doubts</h1>
           <p className="muted mt-8" style={{ marginBottom: 20 }}>
-            Эти поля закрывают вопросы, которые скринер задаёт про всех и почти
-            никогда не спрашивает вслух. Каждое заполненное поле — одна строка
-            в резюме и один снятый блокер.
+            These fields answer questions a screener asks about everyone and almost
+            never asks out loud. Each filled field is one line
+            in the resume and one blocker removed.
           </p>
           {audit && (
             <div className="tasks">
               {audit.tasks.slice(0, 6).map(t => (
                 <div key={t.id} className="task"><span>{t.text}</span></div>
               ))}
-              {!audit.tasks.length && <p className="small muted">Всё заполнено — можно искать.</p>}
+              {!audit.tasks.length && <p className="small muted">Everything is filled in — ready to search.</p>}
             </div>
           )}
           <p className="small muted mt-16">
-            Заполнить их можно прямо сейчас на экране профиля или позже: поиск
-            работает и без этого, просто документы получатся слабее.
+            You can fill them in now on the profile screen or later: search
+            works without them, the documents will just be weaker.
           </p>
         </Card>
       )}
 
       <div className="onb-actions">
-        {step > 0 && <button className="btn btn-ghost" onClick={() => setStep(step - 1)}>Назад</button>}
+        {step > 0 && <button className="btn btn-ghost" onClick={() => setStep(step - 1)}>Back</button>}
         <span className="spacer" />
-        {step === 2 && <button className="btn btn-ghost" onClick={() => setStep(3)}>Подтвержу позже</button>}
+        {step === 2 && <button className="btn btn-ghost" onClick={() => setStep(3)}>Confirm later</button>}
         <button className="btn btn-primary" onClick={next}
           disabled={busy || (step === 0 && !resume.trim())}>
-          {step === 0 && 'Дальше'}
-          {step === 1 && 'Разобрать резюме'}
-          {step === 2 && 'Дальше'}
-          {step === 3 && 'Перейти к поиску'}
+          {step === 0 && 'Next'}
+          {step === 1 && 'Analyse resume'}
+          {step === 2 && 'Next'}
+          {step === 3 && 'Go to search'}
         </button>
       </div>
       {step === 0 && !resume.trim() && (
-        <p className="small muted mt-8">Без текста резюме дальше не пройти: с него начинается всё остальное.</p>
+        <p className="small muted mt-8">You can’t continue without resume text: everything starts from it.</p>
       )}
     </div>
   );

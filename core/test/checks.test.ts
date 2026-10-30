@@ -185,7 +185,7 @@ test('порог swap-теста берётся из конфига, а не и�
 
 test('орфография без словаря честно сообщает, что не проверена', () => {
   const res = checkResume(resume(), ctx());
-  assert.ok(res.some(r => r.rule === 'spelling' && /не проверена/.test(r.message)));
+  assert.ok(res.some(r => r.rule === 'spelling' && /not checked/.test(r.message)));
   const withDict = checkResume(resume(), ctx({ spellcheck: () => ['опечатка'] }));
   assert.ok(withDict.some(r => r.rule === 'spelling' && r.level === 'warn'));
 });

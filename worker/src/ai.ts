@@ -69,8 +69,8 @@ export async function callModel<T>(
         console.error('model_truncated', opts.operation, model, why);
         await logUsage(env, userId, opts.operation, model, usage, cfg, false, why);
         throw new ApiError('model_truncated',
-          `Ответ модели не завершён (${model}, ${why}).`
-          + (first.incomplete === 'max_output_tokens' ? ' Нужно поднять лимит ответа для этой операции.' : ''), 502);
+          `The model response is incomplete (${model}, ${why}).`
+          + (first.incomplete === 'max_output_tokens' ? ' The output limit for this operation needs to be raised.' : ''), 502);
       }
 
       // Ровно один повтор при невалидном JSON, с уточнением схемы (§16).
@@ -86,7 +86,7 @@ export async function callModel<T>(
           console.error('model_invalid_json', opts.operation, model, why);
           await logUsage(env, userId, opts.operation, model, usage, cfg, false, why);
           throw new ApiError('model_invalid_json',
-            `Модель вернула ответ, который не удалось разобрать (${model}, ${why}).`, 502);
+            `The model returned a response that could not be parsed (${model}, ${why}).`, 502);
         }
       }
 
@@ -118,7 +118,7 @@ export async function callModel<T>(
       await logUsage(env, userId, opts.operation, model,
         { tokens_in: 0, tokens_out: 0, tool_calls: 0 }, cfg, false, e.message);
       throw new ApiError('openai_rate_limited',
-        `Модель не ответила после всех попыток (${model}: ${e.message}). Попробуйте через минуту.`, 503, 60);
+        `The model did not respond after all retries (${model}: ${e.message}). Try again in a minute.`, 503, 60);
     }
   }
 }
@@ -156,8 +156,8 @@ async function once(
   if (!String(env.OPENAI_API_KEY ?? '').trim()) {
     throw new ApiError(
       'openai_key_missing',
-      'Не задан ключ OpenAI. Панель Cloudflare → Compute (Workers) → huntback → '
-      + 'Settings → Variables and Secrets → OPENAI_API_KEY, тип Secret.',
+      'The OpenAI key is not set. Cloudflare dashboard → Compute (Workers) → huntback → '
+      + 'Settings → Variables and Secrets → OPENAI_API_KEY, type Secret.',
       503,
     );
   }
@@ -173,7 +173,7 @@ async function once(
         {
           role: 'user',
           content: remindSchema
-            ? `${opts.instruction}\n\nОТВЕТ — СТРОГО ОДИН JSON-объект по схеме «${opts.schema.name}». Без markdown, без пояснений.`
+            ? `${opts.instruction}\n\nANSWER WITH EXACTLY ONE JSON object matching the “${opts.schema.name}” schema. No markdown, no commentary.`
             : opts.instruction,
         },
       ],
@@ -215,7 +215,7 @@ async function once(
       const info = parseOpenAIError(res.status, await res.text().catch(() => ''));
       const reason = describeOpenAIError(info);
       console.error('openai_error', model, reason);
-      throw new ApiError('openai_error', `Сервис модели ответил ошибкой (${model}): ${reason}`, 502);
+      throw new ApiError('openai_error', `The model service returned an error (${model}): ${reason}`, 502);
     }
     const data = await res.json() as {
       status?: string;

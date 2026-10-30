@@ -62,13 +62,13 @@ export function checkBudget(
   if (share >= 1) {
     return {
       allow: false, level: 'stop', spent, limit, share, remaining,
-      reason: `Месячный бюджет $${limit} израсходован. AI-операции остановлены до ${nextMonthLabel(now)}; всё остальное работает.`,
+      reason: `The monthly budget of $${limit} is used up. AI operations are paused until ${nextMonthLabel(now)}; everything else still works.`,
     };
   }
   if (share >= cfg.thresholds.budgetWarnAt) {
     return {
       allow: true, level: 'warn', spent, limit, share, remaining,
-      reason: `Потрачено $${spent.toFixed(2)} из $${limit}. Остатка хватит примерно на ${remaining[0].count} разборов или ${remaining[1].count} писем.`,
+      reason: `Spent $${spent.toFixed(2)} of $${limit}. The remainder covers about ${remaining[0].count} analyses or ${remaining[1].count} letters.`,
     };
   }
   return { allow: true, level: 'ok', spent, limit, share, remaining, reason: null };
@@ -111,10 +111,10 @@ export function checkRunLimit(
   const today = (runsToday || []).filter(r => sameDay(r.started_at, now));
   const active = today.find(r => r.state === 'queued' || r.state === 'running');
   if (active) {
-    return { allow: false, used: today.length, limit: cfg.thresholds.runsPerDay, reason: 'Прогон уже идёт — дождитесь его окончания' };
+    return { allow: false, used: today.length, limit: cfg.thresholds.runsPerDay, reason: 'A search run is already in progress — wait for it to finish' };
   }
   if (today.length >= cfg.thresholds.runsPerDay) {
-    return { allow: false, used: today.length, limit: cfg.thresholds.runsPerDay, reason: `Сегодня уже ${today.length} прогонов из ${cfg.thresholds.runsPerDay}` };
+    return { allow: false, used: today.length, limit: cfg.thresholds.runsPerDay, reason: `Already ${today.length} of ${cfg.thresholds.runsPerDay} runs today` };
   }
   return { allow: true, used: today.length, limit: cfg.thresholds.runsPerDay, reason: null };
 }
@@ -127,6 +127,6 @@ export function checkLetterLimit(
   const today = (sentToday || []).filter(x => sameDay(x.created_at, now));
   const limit = cfg.thresholds.lettersPerDay;
   return today.length >= limit
-    ? { allow: false, used: today.length, limit, reason: `Лимит ${limit} писем в сутки исчерпан. Холодное обращение работает как персональное письмо; как рассылка — не работает.` }
+    ? { allow: false, used: today.length, limit, reason: `The limit of ${limit} letters per day is reached. Cold outreach works as a personal letter, not as a mass mailing.` }
     : { allow: true, used: today.length, limit, reason: null };
 }

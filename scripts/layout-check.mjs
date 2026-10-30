@@ -24,7 +24,7 @@ const browser = await chromium.launch({ executablePath: CHROME });
 for (const width of WIDTHS) {
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 2 });
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: /демо-данных|Открыть демо/i }).click();
+  await page.getByRole('button', { name: /demo data|Open the demo/i }).click();
   await page.waitForTimeout(1200);
 
   // Второй карточкой в демо идёт место с жёстким блокером — самый высокий

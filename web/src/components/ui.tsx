@@ -3,10 +3,10 @@ import { scoreBand, humanDuration, type CheckResult, type RunProgress } from '@h
 
 // ── Совпадение (§11.3) ──────────────────────────────────────────────────────
 export function Score({ value, size = 'md' }: { value: number | null | undefined; size?: 'md' | 'sm' }) {
-  if (value == null) return <span className="chip">не разобрано</span>;
+  if (value == null) return <span className="chip">not analysed</span>;
   const band = scoreBand(value);
   return (
-    <span className={`score score--${band}`} title="Совпадение с ожиданиями места">
+    <span className={`score score--${band}`} title="Match with the place’s expectations">
       <span className="score-num" style={size === 'sm' ? { fontSize: 18 } : undefined}>{value}</span>
       <span className="score-pct">%</span>
     </span>
@@ -16,7 +16,7 @@ export function Score({ value, size = 'md' }: { value: number | null | undefined
 export function Meter({ value }: { value: number }) {
   const band = scoreBand(value);
   return (
-    <div className={`meter meter--${band}`} role="img" aria-label={`Совпадение ${value} процентов`}>
+    <div className={`meter meter--${band}`} role="img" aria-label={`Match ${value} percent`}>
       <i style={{ width: `${Math.max(2, Math.min(100, value))}%` }} />
     </div>
   );
@@ -31,8 +31,8 @@ export function Chip({ tone = 'plain', children, title }:
 
 export function KindChip({ kind }: { kind: 'vacancy' | 'hypothesis' }) {
   return kind === 'vacancy'
-    ? <Chip title="Вакансия опубликована, есть источник">вакансия</Chip>
-    : <Chip tone="accent" title="Вакансии нет: компания, где роль вероятно назреет">гипотеза</Chip>;
+    ? <Chip title="Published vacancy with a source">vacancy</Chip>
+    : <Chip tone="accent" title="No vacancy yet: a company where the role is likely to open">hypothesis</Chip>;
 }
 
 // ── Статус-бар (§13.2) ──────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export function StatusBar({ status, elapsed, onDismiss }:
           {progress?.detail && <span className="muted"> · {progress.detail}</span>}
           {/* Долгие операции без счётчика читаются как зависшие (§13.2). */}
           {status.kind === 'busy' && !progress && elapsed > 0 && (
-            <span className="muted"> · {elapsed} с</span>
+            <span className="muted"> · {elapsed} s</span>
           )}
         </span>
         {progress && <RunBar p={progress} />}
@@ -68,7 +68,7 @@ export function StatusBar({ status, elapsed, onDismiss }:
         ) : null}
       </div>
       {status.kind !== 'busy' && (
-        <button onClick={onDismiss} aria-label="Закрыть сообщение">✕</button>
+        <button onClick={onDismiss} aria-label="Close message">✕</button>
       )}
     </div>
   );
@@ -83,12 +83,12 @@ function RunBar({ p }: { p: RunProgress }) {
   return (
     <div className="runbar">
       <div className="runbar-track" role="progressbar" aria-valuemin={0} aria-valuemax={100}
-        aria-valuenow={p.percent} aria-label="Прогресс поиска">
+        aria-valuenow={p.percent} aria-label="Search progress">
         <i style={{ width: `${Math.max(2, p.percent)}%` }} />
       </div>
       <span className="runbar-meta">
         {p.percent}%
-        {!done && p.remainingSec > 0 && <> · осталось {humanDuration(p.remainingSec)}</>}
+        {!done && p.remainingSec > 0 && <> · {humanDuration(p.remainingSec)} left</>}
       </span>
     </div>
   );
@@ -97,7 +97,7 @@ function RunBar({ p }: { p: RunProgress }) {
 // ── Проверки документа (§10.10) ─────────────────────────────────────────────
 export function Checks({ items }: { items: CheckResult[] }) {
   if (!items.length) {
-    return <p className="small muted">Проверки пройдены: замечаний нет.</p>;
+    return <p className="small muted">All checks passed: no remarks.</p>;
   }
   const order = { block: 0, warn: 1, info: 2 } as const;
   const sorted = [...items].sort((a, b) => order[a.level] - order[b.level]);

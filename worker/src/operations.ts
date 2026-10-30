@@ -30,24 +30,24 @@ function stablePrefix(profile: Profile, facts: Fact[]): string {
   const full = confirmed.filter(f => f.quantified);
   const compact = confirmed.filter(f => !f.quantified);
   return [
-    'Ты работаешь с ОДНИМ кандидатом. Ниже профиль и банк фактов, они не меняются между запросами.',
+    'You work with ONE candidate. Below are the profile and the fact bank; they do not change between requests. Always answer in English.',
     '',
-    '=== ПРОФИЛЬ ===',
+    '=== PROFILE ===',
     profile.resume_text,
-    profile.extras_text ? 'Свободные сведения: ' + profile.extras_text : '',
+    profile.extras_text ? 'Additional notes: ' + profile.extras_text : '',
     '',
-    '=== СТРУКТУРИРОВАННЫЕ ПОЛЯ ===',
-    'Масштаб: ' + JSON.stringify(profile.scale ?? {}),
-    'Право на работу: ' + JSON.stringify(profile.work_auth ?? []),
-    'Языки (CEFR): ' + JSON.stringify(profile.languages ?? []),
-    'Релокация: ' + JSON.stringify(profile.relocation ?? {}),
-    'Перерывы: ' + JSON.stringify(profile.gaps ?? []),
+    '=== STRUCTURED FIELDS ===',
+    'Scale: ' + JSON.stringify(profile.scale ?? {}),
+    'Work authorization: ' + JSON.stringify(profile.work_auth ?? []),
+    'Languages (CEFR): ' + JSON.stringify(profile.languages ?? []),
+    'Relocation: ' + JSON.stringify(profile.relocation ?? {}),
+    'Career gaps: ' + JSON.stringify(profile.gaps ?? []),
     '',
     // Селективный дамп (приём twin): важное полностью, остальное строкой.
-    '=== БАНК ФАКТОВ (подтверждённые, с числом) ===',
+    '=== FACT BANK (confirmed, quantified) ===',
     ...full.map(f => [f.id, f.action, f.how ?? '', f.result ?? '', '[' + f.source_hint + ']'].join(' · ')),
     '',
-    '=== БАНК ФАКТОВ (подтверждённые, без числа) ===',
+    '=== FACT BANK (confirmed, without a number) ===',
     ...compact.map(f => f.id + ' · ' + f.action),
   ].filter(x => x !== '').join('\n');
 }
@@ -64,7 +64,7 @@ async function focusFactIds(ctx: Ctx, facts: Fact[], jd: string): Promise<string
   try {
     const { data } = await callModel<{ fact_ids: string[] }>(ctx.env, ctx.cfg, ctx.userId, {
       operation: 'classify',
-      prefix: 'Ты отбираешь релевантные факты. Отвечай только id из предложенного списка.',
+      prefix: 'You select relevant facts. Answer only with ids from the given list.',
       instruction: fillPrompt(getPrompt(ctx.prompts, 'classify'), { FACTS_INDEX: index, JD: jd }),
       schema: CLASSIFY_SCHEMA, temperature: 0, maxOutputTokens: 400,
     });
@@ -85,7 +85,7 @@ export async function runAudit(ctx: Ctx, profile: Profile, existing: Fact[]) {
     recommendations: string[];
   }>(ctx.env, ctx.cfg, ctx.userId, {
     operation: 'audit',
-    prefix: 'Ты разбираешь резюме руководителя на атомарные факты. Отвечай строго по схеме.',
+    prefix: 'You break an executive resume down into atomic facts. Answer strictly by the schema, in English.',
     instruction: fillPrompt(getPrompt(ctx.prompts, 'audit'), {
       RESUME: profile.resume_text, EXTRAS: profile.extras_text,
     }),
@@ -130,8 +130,8 @@ export async function runAnalyse(
   const focus = await focusFactIds(ctx, facts, jd || (opp.role_title + ' @ ' + opp.company));
 
   const branch = jd
-    ? 'У тебя ЕСТЬ текст вакансии. Ожидания ИЗВЛЕКАЙ из него и ранжируй по важности. Догадки запрещены: чего нет в тексте, того нет в ожиданиях.'
-    : 'Текста вакансии НЕТ. Реконструируй ожидания по роли, отрасли, размеру компании и сигналу, и поставь reconstructed: true.';
+    ? 'You HAVE the job posting text. EXTRACT the expectations from it and rank them by importance. No guessing: what is not in the text is not in the expectations.'
+    : 'There is NO job posting text. Reconstruct the expectations from the role, industry, company size and signal, and set reconstructed: true.';
 
   const location = [opp.city, opp.country].filter(Boolean).join(', ');
   const { data, model, degraded } = await callModel<Analysis>(ctx.env, ctx.cfg, ctx.userId, {
@@ -140,14 +140,14 @@ export async function runAnalyse(
     instruction: fillPrompt(getPrompt(ctx.prompts, 'analyse'), {
       JD_BRANCH: branch,
       OPPORTUNITY: [
-        'Компания: ' + opp.company,
-        'Роль: ' + opp.role_title,
-        opp.industry ? 'Отрасль: ' + opp.industry : '',
-        location ? 'Локация: ' + location : '',
-        opp.size ? 'Размер: ' + opp.size : '',
-        opp.signal ? 'Сигнал: ' + opp.signal : '',
+        'Company: ' + opp.company,
+        'Role: ' + opp.role_title,
+        opp.industry ? 'Industry: ' + opp.industry : '',
+        location ? 'Location: ' + location : '',
+        opp.size ? 'Size: ' + opp.size : '',
+        opp.signal ? 'Signal: ' + opp.signal : '',
       ].filter(Boolean).join('\n'),
-      JD: jd ? '=== ТЕКСТ ВАКАНСИИ ===\n' + jd : '',
+      JD: jd ? '=== JOB POSTING TEXT ===\n' + jd : '',
       FOCUS: focus.join(', '),
     }),
     schema: ANALYSE_SCHEMA, temperature: 0.2, maxOutputTokens: 4000,
@@ -178,8 +178,8 @@ const haystackOf = (p: Profile) => p.resume_text + '\n' + p.extras_text;
 const UA = 'HuntbackBot/1.0 (+https://huntback.app/about)';
 
 const blockedMessage = () =>
-  'Страница закрыта для загрузки: так делают LinkedIn, Indeed и часть корпоративных ATS. '
-  + 'Откройте её в браузере, скопируйте текст вакансии и вставьте во второе поле.';
+  'The page blocks downloading: LinkedIn, Indeed and some corporate ATSs do this. '
+  + 'Open it in your browser, copy the job posting text and paste it into the text field.';
 
 export function htmlToText(html: string): string {
   return html
@@ -201,7 +201,7 @@ export async function fetchJobPage(url: string): Promise<string> {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: ctrl.signal });
     if ([401, 403, 429].includes(res.status)) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
-    if (!res.ok) throw new ApiError('jd_fetch_failed', 'Страница не открылась. Вставьте текст вакансии.', 422);
+    if (!res.ok) throw new ApiError('jd_fetch_failed', 'The page did not open. Paste the job posting text.', 422);
     const raw = (await res.text()).slice(0, 2 * 1024 * 1024);
     const text = htmlToText(raw);
     if (text.length < 400) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
@@ -237,7 +237,7 @@ export function demandFromIngest(raw: Record<string, unknown>, country: string):
 export async function runIngest(ctx: Ctx, text: string) {
   const { data, model } = await callModel<Record<string, unknown>>(ctx.env, ctx.cfg, ctx.userId, {
     operation: 'ingest',
-    prefix: 'Ты извлекаешь структуру вакансии из текста. Пустая строка вместо догадки.',
+    prefix: 'You extract the structure of a job posting from text. An empty string instead of a guess.',
     instruction: fillPrompt(getPrompt(ctx.prompts, 'ingest'), { TEXT: text.slice(0, 30_000) }),
     schema: INGEST_SCHEMA, temperature: 0, maxOutputTokens: 2500,
   });
@@ -259,19 +259,21 @@ export function formatForCountry(country?: string | null): FormatVariant {
 
 function formatRules(v: FormatVariant): string {
   const rules: Record<FormatVariant, string> = {
-    intl: 'Международный формат: без фото, без даты рождения, семейного положения и гражданства.',
-    uk_ie: 'UK и Ирландия: без фото и личных данных (антидискриминационная практика), две страницы это норма.',
-    nordic_nl: 'Скандинавия и Нидерланды: без фото, допустима короткая строка о личном.',
-    de_at: 'DACH: фото уместно, дата и место рождения только с явного согласия пользователя.',
-    europass: 'Структура Europass.',
+    intl: 'International format: no photo, no date of birth, marital status or citizenship.',
+    uk_ie: 'UK and Ireland: no photo or personal data (anti-discrimination practice), two pages is normal.',
+    nordic_nl: 'Nordics and the Netherlands: no photo, a short personal line is acceptable.',
+    de_at: 'DACH: a photo is appropriate; date and place of birth only with the user\'s explicit consent.',
+    europass: 'Europass structure.',
   };
-  return rules[v] + ' Одна колонка, стандартные заголовки, без таблиц, текстбоксов, иконок и шкал навыков.';
+  return rules[v] + ' One column, standard headings, no tables, text boxes, icons or skill bars.';
 }
 
-function documentLanguage(opp: Opportunity): string {
-  const c = String(opp.country ?? '').toLowerCase();
-  if (/sweden|швеция|sverige/.test(c)) return 'sv';
-  if (/russia|россия/.test(c)) return 'ru';
+/**
+ * Язык резюме, письма и комментариев по совпадению — английский по умолчанию,
+ * независимо от страны места. Параметр оставлен, чтобы язык можно было снова
+ * сделать зависимым от места, не трогая вызовы.
+ */
+function documentLanguage(_opp: Opportunity): string {
   return 'en';
 }
 
@@ -311,13 +313,13 @@ export async function runLetter(
   const softest = analysis.expectations.find(e => e.gap_class === 'soft' && e.bridge);
 
   const branch = isVacancy
-    ? 'Напиши СОПРОВОДИТЕЛЬНОЕ письмо, пять блоков в фиксированном порядке: (1) крючок с конкретикой компании и релевантным фактом с числом; (2) 2-3 достижения под ожидания веса must, формулировки отличаются от резюме, числа совпадают; (3) мост, закрывающий главный мягкий гэп, без оправданий; (4) почему эта компания и почему сейчас, сюда встраивается ответ на возражение; (5) спокойный клоуз с одной конкретной просьбой.'
-    : 'Напиши ХОЛОДНОЕ первое письмо руководителю: наблюдение о компании, видимое снаружи, с датой сигнала; затем проблема, которую такое событие обычно порождает, и факт кандидата с числом, доказывающий, что он её решал; затем предложение короткого разговора. Роль можно назвать как ещё не существующую. В конце укажи, откуда взят контакт и как отказаться от дальнейших писем. Пересказ резюме, список компетенций и вложения запрещены.';
+    ? 'Write a COVER letter in five blocks in a fixed order: (1) a hook with something specific about the company and a relevant fact with a number; (2) 2-3 achievements matching the must-have expectations, worded differently from the resume, with the same numbers; (3) a bridge closing the main soft gap, without excuses; (4) why this company and why now, with the answer to the objection built in; (5) a calm close with one specific ask.'
+    : 'Write a COLD first letter to an executive: an observation about the company visible from outside, with the signal date; then the problem such an event usually creates, and a candidate fact with a number proving they have solved it; then a proposal for a short conversation. The role may be framed as one that does not exist yet. At the end, state where the contact came from and how to opt out of further emails. Retelling the resume, listing competencies and attachments are banned.';
 
   const channelLine = opp.channel === 'cold'
-    ? 'холодная подача'
-    : (opp.channel === 'referral' ? 'referral' : 'тёплый контакт')
-      + '; представляет: ' + (opp.referral_name ?? '') + ' — назови его в ПЕРВОМ предложении';
+    ? 'cold application'
+    : (opp.channel === 'referral' ? 'referral' : 'warm contact')
+      + '; introduced by: ' + (opp.referral_name ?? '') + ' — name them in the FIRST sentence';
 
   const { data, model, degraded } = await callModel<Record<string, unknown>>(ctx.env, ctx.cfg, ctx.userId, {
     operation: 'letter',
@@ -326,12 +328,12 @@ export async function runLetter(
       BRANCH: branch,
       OPPORTUNITY: [
         opp.company + ' · ' + opp.role_title,
-        opp.signal ? 'Сигнал: ' + opp.signal : '',
-        opp.jd_text ? 'Из вакансии: ' + opp.jd_text.slice(0, 4000) : '',
+        opp.signal ? 'Signal: ' + opp.signal : '',
+        opp.jd_text ? 'From the posting: ' + opp.jd_text.slice(0, 4000) : '',
       ].filter(Boolean).join('\n'),
       EXPECTATIONS: analysis.expectations.filter(e => e.weight === 'must')
         .map(e => e.expectation + ' -> ' + e.evidence).join('\n'),
-      BRIDGE: softest ? softest.bridge + ': ' + softest.gap_answer : 'мягких гэпов нет, дай абзац о масштабе или траектории',
+      BRIDGE: softest ? softest.bridge + ': ' + softest.gap_answer : 'no soft gaps; write a paragraph about scale or trajectory',
       OBJECTION: analysis.objection ? analysis.objection.risk + ' -> ' + analysis.objection.answer : '',
       CHANNEL: channelLine,
       TONE: opts.tone ?? 'neutral',
@@ -356,7 +358,7 @@ export async function runSwapTest(ctx: Ctx, body: string, opp: Opportunity) {
   if (opp.contact_name) swapped = swapped.split(opp.contact_name).join('Alex Doe');
   const { data } = await callModel<{ broken: string[]; generic: string[] }>(ctx.env, ctx.cfg, ctx.userId, {
     operation: 'check',
-    prefix: 'Ты проверяешь письмо на шаблонность. Отвечай строго по схеме.',
+    prefix: 'You check a letter for template-like writing. Answer strictly by the schema.',
     instruction: fillPrompt(getPrompt(ctx.prompts, 'check'), { LETTER: swapped }),
     schema: SWAP_SCHEMA, temperature: 0, maxOutputTokens: 800,
   });
@@ -366,7 +368,7 @@ export async function runSwapTest(ctx: Ctx, body: string, opp: Opportunity) {
 // ── Discover (§10.3, §9.1) ──────────────────────────────────────────────────
 function splitPerimeter(perimeter: string, max: number): string[] {
   const parts = String(perimeter || '').split(/[;\n]/).map(s => s.trim()).filter(Boolean);
-  return parts.length ? parts.slice(0, max) : [perimeter || 'подходящие руководящие роли'];
+  return parts.length ? parts.slice(0, max) : [perimeter || 'suitable leadership roles'];
 }
 
 /** Направления поиска — по ним же считается оценка времени и прогресс. */
@@ -381,16 +383,29 @@ export function discoverAngles(ctx: Ctx, profile: Profile): string[] {
  *   signals   — прежний поиск гипотез по датированным сигналам.
  */
 export const DISCOVER_PASSES = ['vacancies', 'signals'] as const;
+export type DiscoverPass = typeof DISCOVER_PASSES[number];
+
+/**
+ * Режим поиска: `all` — вакансии и гипотезы, `vacancies` — только вакансии.
+ * Во втором режиме проход по сигналам не запускается вовсе, а гипотезы,
+ * попавшиеся в проходе по вакансиям, отбрасываются.
+ */
+export type SearchMode = 'all' | 'vacancies';
+
+export function passesFor(mode: SearchMode): readonly DiscoverPass[] {
+  return mode === 'vacancies' ? ['vacancies'] : DISCOVER_PASSES;
+}
 
 export async function runDiscover(
   ctx: Ctx, profile: Profile, known: string[], count = 8,
   onAngleDone?: (done: number, total: number) => void,
+  mode: SearchMode = 'all',
 ) {
   // Запросы идут ПУЛОМ, а не последовательно: §14 требует p95 < 180 с, и
   // последовательный обход шести веб-запросов в него не укладывается (§4.3.3).
   const angles = discoverAngles(ctx, profile);
   const perAngle = Math.ceil(count / angles.length) + 1;
-  const tasks = angles.flatMap(angle => DISCOVER_PASSES.map(pass => ({ angle, pass })));
+  const tasks = angles.flatMap(angle => passesFor(mode).map(pass => ({ angle, pass })));
   const today = new Date().toISOString().slice(0, 10);
   let done = 0;
   const outcomes: AngleOutcome[] = [];
@@ -402,7 +417,7 @@ export async function runDiscover(
       };
       const { data, trace } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
         operation: 'discover',
-        prefix: 'Кандидат ищет работу. Профиль: ' + profile.resume_text.slice(0, 6000),
+        prefix: 'The candidate is looking for a job. Profile: ' + profile.resume_text.slice(0, 6000),
         instruction: fillPrompt(getPrompt(ctx.prompts, pass === 'vacancies' ? 'discover_vacancies' : 'discover'), tokens),
         // Рассуждение и разбор найденного у рассуждающей модели съедают лимит
         // ответа: при 4000 JSON обрезался, и прогон находил ноль. Платится
@@ -411,7 +426,8 @@ export async function runDiscover(
         searchDomains: pass === 'vacancies' ? ctx.cfg.jobDomains : undefined,
       });
       const raw = data.items ?? [];
-      const kept = raw.map(sanitizeDiscoverItem).filter(Boolean) as DiscoverItem[];
+      const kept = (raw.map(sanitizeDiscoverItem).filter(Boolean) as DiscoverItem[])
+        .filter(k => mode !== 'vacancies' || k.kind === 'vacancy');
       outcomes.push({
         angle, pass, returned: raw.length, kept: kept.length,
         vacancies: kept.filter(k => k.kind === 'vacancy').length,

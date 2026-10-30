@@ -45,7 +45,7 @@ test('аудит и правило блокеров отвечают на воп
 
 test('метрики показывают человекочитаемое значение, а не долю', () => {
   const rep = auditProfile(profile(), [fact('f1'), fact('f2')], undefined, new Date('2026-09-09'));
-  assert.match(rep.metrics.find(m => m.id === 'tenure')!.display!, /мес\./);
+  assert.match(rep.metrics.find(m => m.id === 'tenure')!.display!, / mo$/);
   assert.match(rep.metrics.find(m => m.id === 'quantification')!.display!, /%/);
 });
 
@@ -102,12 +102,12 @@ test('бюджет: ok → warn на 80% → stop на 100%', () => {
   const warn = checkBudget([entry(12.5, '2026-09-01T00:00:00Z')], DEFAULT_CONFIG, now);
   assert.equal(warn.level, 'warn');
   assert.equal(warn.allow, true, 'на 80% работа не останавливается');
-  assert.match(warn.reason!, /разборов/, 'остаток назван в понятных единицах, а не в процентах');
+  assert.match(warn.reason!, /analyses/, 'остаток назван в понятных единицах, а не в процентах');
 
   const stop = checkBudget([entry(15, '2026-09-01T00:00:00Z')], DEFAULT_CONFIG, now);
   assert.equal(stop.level, 'stop');
   assert.equal(stop.allow, false);
-  assert.match(stop.reason!, /всё остальное работает/);
+  assert.match(stop.reason!, /everything else still works/);
 });
 
 test('бюджет считается по календарному месяцу', () => {
@@ -130,7 +130,7 @@ test('лимит прогонов: один активный, десять в с
   const now = new Date('2026-09-09T12:00:00Z');
   const running = checkRunLimit([{ started_at: '2026-09-09T11:00:00Z', state: 'running' }], DEFAULT_CONFIG, now);
   assert.equal(running.allow, false);
-  assert.match(running.reason!, /уже идёт/);
+  assert.match(running.reason!, /already in progress/);
 
   const many = Array.from({ length: 10 }, () => ({ started_at: '2026-09-09T09:00:00Z', state: 'done' }));
   assert.equal(checkRunLimit(many, DEFAULT_CONFIG, now).allow, false);
@@ -144,5 +144,5 @@ test('лимит писем — 10 в сутки', () => {
   const ten = Array.from({ length: 10 }, () => ({ created_at: '2026-09-09T09:00:00Z' }));
   const v = checkLetterLimit(ten, DEFAULT_CONFIG, now);
   assert.equal(v.allow, false);
-  assert.match(v.reason!, /как рассылка/);
+  assert.match(v.reason!, /mass mailing/);
 });

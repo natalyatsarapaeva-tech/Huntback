@@ -13,7 +13,7 @@ export const ANALYSE_SCHEMA = {
       items: obj({
         expectation: s(), weight: { type: 'string', enum: ['must', 'important', 'nice'] },
         evidence: s(), fact_id: { type: ['string', 'null'] },
-        source_hint: s('дословная цитата 3–8 слов из профиля'),
+        source_hint: s('verbatim 3–8 word quote from the profile'),
         strength: { type: 'string', enum: ['strong', 'partial', 'gap'] },
         gap_class: { type: ['string', 'null'], enum: ['hard', 'soft', null] },
         bridge: {
@@ -48,7 +48,7 @@ export const AUDIT_SCHEMA = {
         metric_value: { type: ['number', 'null'] }, metric_unit: s(),
         scale_tags: { type: 'array', items: { type: 'string', enum: ['team', 'managers', 'budget', 'pnl', 'geo', 'users'] } },
         domain_tags: { type: 'array', items: s() },
-        source_hint: s('дословная цитата 3–8 слов'),
+        source_hint: s('verbatim 3–8 word quote'),
       }, ['company', 'role_title', 'period_from', 'period_to', 'action', 'how', 'result',
         'metric_value', 'metric_unit', 'scale_tags', 'domain_tags', 'source_hint']),
     },
@@ -58,9 +58,9 @@ export const AUDIT_SCHEMA = {
     },
     questions: {
       type: 'array',
-      items: obj({ about: s('к какому факту вопрос'), question: s() }, ['about', 'question']),
+      items: obj({ about: s('which fact the question is about'), question: s() }, ['about', 'question']),
     },
-    recommendations: { type: 'array', items: s('текстовая рекомендация поверх метрик') },
+    recommendations: { type: 'array', items: s('text recommendation on top of the metrics') },
   }, ['facts', 'roles', 'questions', 'recommendations']),
 };
 
@@ -76,7 +76,7 @@ export const RESUME_SCHEMA = {
       type: 'array',
       items: obj({
         company: s(), role_title: s(), period_from: s(), period_to: s(),
-        context_line: s('масштаб: команда, менеджеры, бюджет/P&L, география'),
+        context_line: s('scale: team, managers, budget/P&L, geography'),
         bullets: { type: 'array', items: s() },
         condensed: { type: 'boolean' },
       }, ['company', 'role_title', 'period_from', 'period_to', 'context_line', 'bullets', 'condensed']),
@@ -89,7 +89,7 @@ export const RESUME_SCHEMA = {
 export const LETTER_SCHEMA = {
   name: 'letter',
   schema: obj({
-    subject: s('конкретная и короткая, без «Application for»'),
+    subject: s('specific and short, no “Application for”'),
     body: s(),
     bridge_used: {
       type: ['string', 'null'],
@@ -112,7 +112,7 @@ export const INGEST_SCHEMA = {
     is_job_posting: { type: 'boolean' },
     // Требования места для правил блокеров (§10.4) — извлекаются вместе со структурой.
     demand: obj({
-      language_required: s('язык и минимальный уровень, если требуется'),
+      language_required: s('language and minimum level, if required'),
       language_mandatory: { type: 'boolean' },
       sponsorship_offered: { type: ['boolean', 'null'] },
       team_size: { type: ['number', 'null'] },

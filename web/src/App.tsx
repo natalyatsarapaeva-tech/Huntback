@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Api, Me, Profile, Fact, AuditReport, Opportunity, OpportunityDetail, UsageSummary,
-  ImportResult, RunEvent,
+  ImportResult, RunEvent, SearchMode,
 } from './api/types.ts';
 import { runProgress } from '@huntback/core';
 import { httpApi, ApiFailure } from './api/client.ts';
@@ -27,6 +27,12 @@ const BUSY_TIMEOUT_MS = 180_000;
 /** Сборка без серверной части: витрина интерфейса на статическом хостинге. */
 const DEMO_ONLY = import.meta.env.VITE_DEMO_ONLY === '1';
 
+/** Выбор «что искать» — удобство одного браузера, поэтому localStorage. */
+const SEARCH_MODE_KEY = 'huntback.searchMode';
+function readSearchMode(): SearchMode {
+  try { return localStorage.getItem(SEARCH_MODE_KEY) === 'vacancies' ? 'vacancies' : 'all'; } catch { return 'all'; }
+}
+
 export function App() {
   const [api, setApi] = useState<Api | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -40,6 +46,7 @@ export function App() {
   const [detail, setDetail] = useState<OpportunityDetail | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [searchMode, setSearchMode] = useState<SearchMode>(readSearchMode);
 
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [elapsed, setElapsed] = useState(0);
@@ -55,7 +62,7 @@ export function App() {
     // свою полосу, поэтому его этот таймер не трогает.
     const bail = setTimeout(() => setStatus(cur => (
       cur.kind === 'busy' && !cur.progress
-        ? { kind: 'error', text: 'Операция не ответила за три минуты. Кнопки разблокированы — попробуйте ещё раз.' }
+        ? { kind: 'error', text: 'The operation didn’t respond within three minutes. The buttons are unlocked — try again.' }
         : cur
     )), BUSY_TIMEOUT_MS);
     return () => { clearInterval(tick); clearTimeout(bail); };
@@ -69,7 +76,7 @@ export function App() {
       setStatus(done ? { kind: 'ok', text: done(r) } : { kind: 'idle' });
       return r;
     } catch (e) {
-      const msg = e instanceof ApiFailure || e instanceof Error ? e.message : 'Не получилось';
+      const msg = e instanceof ApiFailure || e instanceof Error ? e.message : 'That didn’t work';
       setStatus({ kind: 'error', text: msg });
       return null;
     }
@@ -85,7 +92,7 @@ export function App() {
     setProfile(p.profile); setFacts(p.facts); setAudit(p.audit);
     setList(await mockApi.listOpportunities());
     setUsage(await mockApi.usage());
-    setStatus({ kind: 'info', text: 'Демо-режим: данные вымышленные, но аудит, совпадение, блокеры и проверки считает настоящее ядро.' });
+    setStatus({ kind: 'info', text: 'Demo mode: the data is fictional, but the audit, match score, blockers and checks are computed by the real core.' });
   }, []);
 
   // Реальный вход: если сессии нет, показываем экран входа.
@@ -128,9 +135,21 @@ export function App() {
     setFacts(p.facts); setAudit(p.audit);
   };
 
+  const deleteFact = async (id: string) => {
+    const r = await run('Deleting the fact', () => api.deleteFact(id), () => 'Fact deleted');
+    if (r === null) return;
+    const p = await api.getProfile();
+    setFacts(p.facts); setAudit(p.audit);
+  };
+
+  const changeSearchMode = (m: SearchMode) => {
+    setSearchMode(m);
+    try { localStorage.setItem(SEARCH_MODE_KEY, m); } catch { /* приватный режим — просто не запомним */ }
+  };
+
   const runAudit = async () => {
-    const r = await run('Разбираю резюме на факты', () => api.runAudit(),
-      x => `Аудит готов: ${x.facts.length} фактов, ${x.audit.tasks.length} правок к профилю`);
+    const r = await run('Breaking the resume down into facts', () => api.runAudit(),
+      x => `Audit ready: ${x.facts.length} facts, ${x.audit.tasks.length} profile fixes`);
     if (r) { setFacts(r.facts); setAudit(r.audit); }
   };
 
@@ -158,7 +177,7 @@ export function App() {
     const started = Date.now();
     let last: RunEvent = { stage: 'plan' };
     setStatus({
-      kind: 'busy', text: 'Формирую поисковые запросы',
+      kind: 'busy', text: 'Building search queries',
       progress: runProgress({ stage: 'plan', elapsedSec: 0 }),
     });
 
@@ -173,21 +192,21 @@ export function App() {
     }, 1000);
 
     try {
-      await api.runSearch(e => {
+      await api.runSearch(searchMode, e => {
         last = e;
         const elapsedSec = Math.round((Date.now() - started) / 1000);
         if (e.stage === 'done') {
           clearInterval(tick);
           if (e.error) { setStatus({ kind: 'error', text: e.error }); return; }
           if (!e.found) {
-            setStatus({ kind: 'error', text: 'Не найдено ни одного места. По направлениям:', lines: e.notes });
+            setStatus({ kind: 'error', text: 'No places found. By search direction:', lines: e.notes });
             return;
           }
           setStatus({
             kind: 'ok',
             text: e.added
-              ? `Найдено ${e.found}, добавлено новых ${e.added}`
-              : `Найдено ${e.found}, новых среди них нет`,
+              ? `Found ${e.found}, ${e.added} new added`
+              : `Found ${e.found}, none of them new`,
             // Разбивка по проходам с запросами и источниками — пока поиск
             // настраивается, она нужна после каждого прогона.
             lines: e.notes,
@@ -199,7 +218,7 @@ export function App() {
       });
       await refreshList(api);
     } catch (e) {
-      const msg = e instanceof ApiFailure || e instanceof Error ? e.message : 'Поиск не удался';
+      const msg = e instanceof ApiFailure || e instanceof Error ? e.message : 'The search failed';
       setStatus({ kind: 'error', text: msg });
     } finally {
       clearInterval(tick);
@@ -214,29 +233,30 @@ export function App() {
         {tab === 'places' && (
           <Places
             list={list} detail={detail} selectedId={selected} busy={busy}
+            searchMode={searchMode} onSearchMode={changeSearchMode}
             onSelect={setSelected}
             onRun={startRun}
             onAnalyse={async id => {
-              const r = await run('Разбираю ожидания места', () => api.analyse(id),
-                x => `Разобрано: ${x.coverage.closed} из ${x.coverage.total} ожиданий закрыто, совпадение ${x.analysis.score}%`);
+              const r = await run('Analysing the place’s expectations', () => api.analyse(id),
+                x => `Analysed: ${x.coverage.closed} of ${x.coverage.total} expectations covered, match ${x.analysis.score}%`);
               if (r) { setDetail(await api.getOpportunity(id)); await refreshList(api); }
             }}
             onResume={async id => {
-              const r = await run('Собираю резюме под это место', () => api.makeResume(id),
+              const r = await run('Building a resume for this place', () => api.makeResume(id),
                 x => x.checks.some(c => c.level === 'block')
-                  ? 'Резюме собрано, но есть блокирующие замечания — посмотрите список'
-                  : 'Резюме собрано');
+                  ? 'Resume built, but there are blocking remarks — see the list'
+                  : 'Resume built');
               if (r) setDetail(await api.getOpportunity(id));
             }}
             onLetter={async id => {
-              const r = await run('Пишу письмо и проверяю его на шаблонность', () => api.makeLetter(id),
+              const r = await run('Writing the letter and checking it for templates', () => api.makeLetter(id),
                 x => x.checks.some(c => c.level === 'block')
-                  ? 'Письмо написано, но проверки нашли блокирующие замечания'
-                  : 'Письмо написано и прошло swap-тест');
+                  ? 'Letter written, but the checks found blocking remarks'
+                  : 'Letter written and passed the swap test');
               if (r) setDetail(await api.getOpportunity(id));
             }}
             onArchive={async id => {
-              await run('Отправляю в архив', () => api.archiveOpportunity(id), () => 'Место в архиве');
+              await run('Archiving', () => api.archiveOpportunity(id), () => 'Place archived');
               setSelected(null);
               await refreshList(api);
             }}
@@ -246,10 +266,15 @@ export function App() {
               else setDetail(await api.getOpportunity(id));
               await refreshList(api);
             }}
-            onImport={async input => run('Разбираю вакансию', () => api.importJob(input))}
+            onFetchJobText={async id => {
+              const r = await run('Downloading the job posting text', () => api.fetchJobText(id),
+                x => `Job posting text saved (${x.jd_text.length.toLocaleString('en')} characters)`);
+              if (r) { setDetail(await api.getOpportunity(id)); }
+            }}
+            onImport={async input => run('Parsing the vacancy', () => api.importJob(input))}
             onConfirmImport={async r => {
-              const created = await run('Создаю место', () => api.confirmImport(r),
-                x => (x.merged ? 'Существующее место дополнено текстом вакансии' : 'Место создано'));
+              const created = await run('Creating the place', () => api.confirmImport(r),
+                x => (x.merged ? 'Job posting text added to the existing place' : 'Place created'));
               if (created) { await refreshList(api); setSelected(created.id); }
             }}
             onGoToProfile={() => setTab('profile')}
@@ -258,7 +283,7 @@ export function App() {
         {tab === 'profile' && (
           <ProfileScreen
             profile={profile} facts={facts} audit={audit} busy={busy}
-            onSave={saveProfile} onAudit={runAudit} onPatchFact={patchFact}
+            onSave={saveProfile} onAudit={runAudit} onPatchFact={patchFact} onDeleteFact={deleteFact}
           />
         )}
         {tab === 'usage' && <Usage data={usage} />}
@@ -280,18 +305,18 @@ function Header({ me, tab, onTab, spent, limit, minimal }: {
           <span className="brand-word">Huntback</span>
         </span>
         {!minimal && (
-          <nav className="nav" aria-label="Разделы">
+          <nav className="nav" aria-label="Sections">
             <button className="nav-item" aria-current={tab === 'places' ? 'page' : undefined}
-              onClick={() => onTab('places')}>Места</button>
+              onClick={() => onTab('places')}>Places</button>
             <button className="nav-item" aria-current={tab === 'profile' ? 'page' : undefined}
-              onClick={() => onTab('profile')}>Профиль</button>
+              onClick={() => onTab('profile')}>Profile</button>
             <button className="nav-item" aria-current={tab === 'usage' ? 'page' : undefined}
-              onClick={() => onTab('usage')}>Расходы</button>
+              onClick={() => onTab('usage')}>Spending</button>
           </nav>
         )}
         <div className="header-right">
           {spent != null && limit != null && (
-            <span className="chip" title="Потрачено за месяц">${spent.toFixed(2)} / ${limit}</span>
+            <span className="chip" title="Spent this month">${spent.toFixed(2)} / ${limit}</span>
           )}
           <span className="chip chip-user">{me.user.name || me.user.email}</span>
         </div>

@@ -43,7 +43,7 @@ export function errorResponse(e: unknown): Response {
   // Тело ошибки пользователю — без внутренностей; подробности только в логах,
   // и без резюме, писем и адресов (§14 «Логи»).
   console.error('unhandled', e instanceof Error ? e.message : String(e));
-  return json({ error: { code: 'internal', message: 'Что-то пошло не так. Попробуйте ещё раз.' } }, 500);
+  return json({ error: { code: 'internal', message: 'Something went wrong. Please try again.' } }, 500);
 }
 
 export const nowIso = () => new Date().toISOString();
