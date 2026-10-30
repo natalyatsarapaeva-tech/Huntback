@@ -1,11 +1,11 @@
 import type {
   Profile, Fact, Opportunity, Analysis, CheckResult, AuditReport, BudgetStatus, Coverage,
-  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent,
+  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent, OpportunityLabel,
 } from '@huntback/core';
 
 export type {
   Profile, Fact, Opportunity, Analysis, CheckResult, AuditReport, BudgetStatus, Coverage,
-  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent,
+  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent, OpportunityLabel,
 };
 
 export interface Me {
@@ -62,8 +62,12 @@ export interface RunState {
   stage: string | null; found: number; added: number; error: string | null;
 }
 
+/** Режим поиска: вакансии и гипотезы либо только вакансии. */
+export type SearchMode = 'all' | 'vacancies';
+
 export interface Api {
   me(): Promise<Me>;
+  logout(): Promise<void>;
   getProfile(): Promise<{ profile: Profile; audit: AuditReport | null; facts: Fact[] }>;
   saveProfile(patch: Partial<Profile>): Promise<{ profile: Profile; audit: AuditReport }>;
   runAudit(): Promise<{ audit: AuditReport; facts: Fact[] }>;
@@ -73,6 +77,8 @@ export interface Api {
   getOpportunity(id: string): Promise<OpportunityDetail>;
   patchOpportunity(id: string, patch: Record<string, unknown>): Promise<{ analysis?: Analysis }>;
   archiveOpportunity(id: string): Promise<void>;
+  /** Скачать текст вакансии по ссылке источника и сохранить как референс. */
+  fetchJobText(id: string): Promise<{ jd_text: string }>;
   importJob(input: { url?: string; text?: string }): Promise<ImportResult>;
   confirmImport(r: ImportResult & { parsed: ParsedJob }): Promise<{ id: string; merged?: boolean }>;
   analyse(id: string): Promise<{ analysis: Analysis; coverage: Coverage }>;
@@ -84,6 +90,6 @@ export interface Api {
    * события по ходу, поэтому вместо «запустить и опрашивать» — один вызов,
    * который зовёт onEvent на каждом шаге и завершается вместе с прогоном.
    */
-  runSearch(onEvent: (e: RunEvent) => void): Promise<void>;
+  runSearch(mode: SearchMode, onEvent: (e: RunEvent) => void): Promise<void>;
   usage(): Promise<UsageSummary>;
 }

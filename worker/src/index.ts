@@ -9,7 +9,8 @@
 import {
   checkBudget, checkRunLimit, findDuplicate, reanalyseAfterProfileChange,
   computeScore, coverage, auditProfile, checkResume, checkLetter,
-  estimateRunSeconds, describeAngleOutcomes, type RunEvent, type Demand, type Opportunity,
+  estimateRunSeconds, describeAngleOutcomes, OPPORTUNITY_LABELS,
+  type RunEvent, type Demand, type Opportunity, type OpportunityLabel,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
 import { authStart, authCallback, logout, requireSession } from './auth.ts';
@@ -17,7 +18,7 @@ import * as db from './store.ts';
 import { PROMPT_META, DEFAULT_PROMPTS } from './prompts.ts';
 import {
   type Ctx, runAudit, runAnalyse, runIngest, runResume, runLetter, runSwapTest,
-  runDiscover, discoverAngles, DISCOVER_PASSES, fetchJobPage, formatForCountry,
+  runDiscover, discoverAngles, passesFor, fetchJobPage, formatForCountry, type SearchMode,
 } from './operations.ts';
 
 export default {
@@ -51,16 +52,16 @@ async function authCallbackDiagnosed(env: Env, url: URL): Promise<Response> {
     console.error('auth callback failed', detail);
     const esc = (t: string) => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
     return new Response(
-      '<!doctype html><meta charset="utf-8"><title>Huntback — вход не завершён</title>'
+      '<!doctype html><meta charset="utf-8"><title>Huntback — sign-in incomplete</title>'
       + '<style>body{font:16px/1.6 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 1.5rem;color:#27333c}'
       + 'h1{font-size:1.3rem;margin:0 0 .75rem}p{margin:0 0 1rem}'
       + 'pre{background:#f0f2f4;padding:.75rem;border-radius:6px;white-space:pre-wrap;font-size:.85rem}'
       + '.hint{color:#64798b;font-size:.94rem}</style>'
-      + '<h1>Google пройден, но вход не завершился</h1>'
-      + '<p>Согласие получено — сломалось уже на нашей стороне, при сохранении сессии.</p>'
+      + '<h1>Google approved, but sign-in did not complete</h1>'
+      + '<p>Consent was received — it broke on our side while saving the session.</p>'
       + `<pre>${esc(detail.slice(0, 400))}</pre>`
-      + '<p class="hint">Пришлите этот текст — по нему причина видна однозначно. '
-      + 'Полный лог: панель Cloudflare → Compute (Workers) → huntback → Logs.</p>',
+      + '<p class="hint">Send this text — it shows the cause unambiguously. '
+      + 'Full log: Cloudflare dashboard → Compute (Workers) → huntback → Logs.</p>',
       { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
     );
   }
@@ -74,7 +75,7 @@ async function ctxFor(env: Env, userId: string): Promise<Ctx> {
 /** Бюджет спрашивается ПЕРЕД каждой AI-операцией (§10.9). */
 async function assertBudget(env: Env, userId: string, ctx: Ctx): Promise<void> {
   const status = checkBudget(await db.usageThisMonth(env, userId), ctx.cfg);
-  if (!status.allow) throw new ApiError('budget_exceeded', status.reason ?? 'Бюджет исчерпан', 429);
+  if (!status.allow) throw new ApiError('budget_exceeded', status.reason ?? 'Budget exhausted', 429);
 }
 
 async function body<T>(request: Request): Promise<T> {
@@ -128,7 +129,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     await assertBudget(env, userId, ctx);
     const profile = await db.getProfile(env, userId);
     if (!profile.resume_text.trim()) {
-      throw new ApiError('profile_empty', 'Сначала вставьте резюме — аудиту нужен текст', 400);
+      throw new ApiError('profile_empty', 'Paste your resume first — the audit needs text', 400);
     }
     const existing = await db.listFacts(env, userId);
     const res = await runAudit(ctx, profile, existing);
@@ -153,7 +154,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
   }
   if (p === '/api/opportunities' && m === 'POST') {
     const b = await body<{ company: string; role_title: string }>(request);
-    if (!b.company || !b.role_title) throw new ApiError('bad_request', 'Нужны компания и роль', 400);
+    if (!b.company || !b.role_title) throw new ApiError('bad_request', 'Company and role are required', 400);
     const id = await db.createOpportunity(env, userId, { ...b, origin: 'manual_text', kind: 'hypothesis' });
     return json({ id }, 201);
   }
@@ -162,7 +163,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     await assertBudget(env, userId, ctx);
     const b = await body<{ url?: string; text?: string }>(request);
     const text = b.text?.trim() || (b.url ? await fetchJobPage(b.url) : '');
-    if (!text) throw new ApiError('bad_request', 'Нужна ссылка или текст вакансии', 400);
+    if (!text) throw new ApiError('bad_request', 'A link or the job posting text is required', 400);
     const res = await runIngest(ctx, text);
     // Дедуп до создания (§10.8): предложить дополнить, а не плодить копии.
     const existing = (await db.listOpportunities(env, userId, {}))
@@ -175,7 +176,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
   if (p === '/api/opportunities/import/confirm' && m === 'POST') {
     const b = await body<Record<string, unknown>>(request);
     const parsed = (b.parsed ?? {}) as Record<string, string>;
-    if (!parsed.company || !parsed.role_title) throw new ApiError('bad_request', 'Нужны компания и роль', 400);
+    if (!parsed.company || !parsed.role_title) throw new ApiError('bad_request', 'Company and role are required', 400);
     // Гипотеза, по которой открылась вакансия: дополняем, а не дублируем (§10.8).
     if (b.duplicate_of) {
       await db.patchOpportunity(env, userId, String(b.duplicate_of), {
@@ -199,7 +200,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     const id = oppMatch[1];
     const action = oppMatch[2];
     const opp = await db.getOpportunity(env, userId, id);
-    if (!opp) throw new ApiError('not_found', 'Место не найдено', 404);
+    if (!opp) throw new ApiError('not_found', 'Place not found', 404);
 
     if (!action && m === 'GET') {
       const [stored, documents] = await Promise.all([
@@ -213,7 +214,12 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     }
     if (!action && m === 'PATCH') {
       const patch = await body<Record<string, unknown>>(request);
+      if ('label' in patch && patch.label !== null && !OPPORTUNITY_LABELS.includes(patch.label as OpportunityLabel)) {
+        throw new ApiError('bad_request', 'Unknown label', 400);
+      }
       await db.patchOpportunity(env, userId, id, patch);
+      // Пометка не меняет требований места — пересчитывать разбор незачем.
+      if (Object.keys(patch).every(k => k === 'label')) return json({ ok: true });
       // Снятие блокера пересчитывает разбор БЕЗ вызова модели (§8.3, критерий 5b).
       const stored = await db.getAnalysis(env, userId, id);
       if (stored) {
@@ -227,6 +233,14 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     if (!action && m === 'DELETE') {
       await db.patchOpportunity(env, userId, id, { status: 'archived' });
       return json({ ok: true });
+    }
+
+    // Текст вакансии по ссылке источника — без модели, просто загрузка страницы.
+    if (action === '/jd' && m === 'POST') {
+      if (!opp.source_url) throw new ApiError('bad_request', 'This place has no source link', 400);
+      const text = await fetchJobPage(opp.source_url);
+      await db.patchOpportunity(env, userId, id, { jd_text: text });
+      return json({ jd_text: text });
     }
 
     if (action === '/analyse' && m === 'POST') {
@@ -247,7 +261,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       const ctx = await ctxFor(env, userId);
       await assertBudget(env, userId, ctx);
       const stored = await db.getAnalysis(env, userId, id);
-      if (!stored) throw new ApiError('no_analysis', 'Сначала разберите ожидания этого места', 409);
+      if (!stored) throw new ApiError('no_analysis', 'Analyse this place’s expectations first', 409);
       const [profile, facts] = await Promise.all([db.getProfile(env, userId), db.listFacts(env, userId)]);
       const analysis = { ...stored.analysis, score: computeScore(stored.analysis.expectations) };
       const opts = await body<Record<string, never>>(request);
@@ -281,7 +295,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     const docId = docMatch[1];
     const row = await env.DB.prepare('SELECT * FROM documents WHERE id=? AND user_id=?')
       .bind(docId, userId).first<Record<string, unknown>>();
-    if (!row) throw new ApiError('not_found', 'Документ не найден', 404);
+    if (!row) throw new ApiError('not_found', 'Document not found', 404);
     const b = await body<{ body?: string; subject?: string }>(request);
     const nextBody = b.body ?? String(row.body);
 
@@ -295,7 +309,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     const checks = row.kind === 'resume'
       ? checkResume(JSON.parse(nextBody), { cfg, facts, profile, analysis })
       : checkLetter(
-        { subject: b.subject ?? String(row.subject ?? ''), body: nextBody, word_count: 0, bridge_used: null, facts_used: [], language: 'ru' },
+        { subject: b.subject ?? String(row.subject ?? ''), body: nextBody, word_count: 0, bridge_used: null, facts_used: [], language: 'en' },
         opp?.kind ?? 'vacancy',
         { cfg, facts, profile, analysis, opportunity: opp ? { company: opp.company, signal: opp.signal, jd_text: opp.jd_text } : null },
       );
@@ -309,13 +323,15 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
 
   // ── Прогоны (§8.4, §9) ───────────────────────────────────────────────────
   if (p === '/api/runs' && m === 'POST') {
-    return startStreamingRun(env, userId, ctx);
+    const b = await body<{ mode?: string }>(request);
+    const mode: SearchMode = b.mode === 'vacancies' ? 'vacancies' : 'all';
+    return startStreamingRun(env, userId, ctx, mode);
   }
   const runMatch = p.match(/^\/api\/runs\/([\w-]+)$/);
   if (runMatch && m === 'GET') {
     const r = await env.DB.prepare('SELECT * FROM runs WHERE id=? AND user_id=?')
       .bind(runMatch[1], userId).first();
-    if (!r) throw new ApiError('not_found', 'Прогон не найден', 404);
+    if (!r) throw new ApiError('not_found', 'Run not found', 404);
     return json(r);
   }
 
@@ -347,7 +363,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     if (m === 'PUT') {
       const b = await body<{ key: string; value: unknown }>(request);
       if (!['MODELS', 'THRESHOLDS', 'STOPLIST', 'PROMPTS'].includes(b.key)) {
-        throw new ApiError('bad_request', 'Неизвестный ключ конфига', 400);
+        throw new ApiError('bad_request', 'Unknown config key', 400);
       }
       await db.saveConfigKey(env, b.key, b.value);
       return json({ ok: true });
@@ -370,7 +386,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     return logout(env, request);
   }
 
-  throw new ApiError('not_found', 'Неизвестный маршрут', 404);
+  throw new ApiError('not_found', 'Unknown route', 404);
 }
 
 /** Требования места: из ingest (KV) либо реконструкция по стране (§10.4). */
@@ -393,14 +409,16 @@ async function loadDemand(env: Env, oppId: string, opp: Opportunity): Promise<De
 //     стирает результат: работа продолжается в ctx.waitUntil и доводится
 //     до конца.
 
-async function startStreamingRun(env: Env, userId: string, ctx: ExecutionContext): Promise<Response> {
+async function startStreamingRun(
+  env: Env, userId: string, ctx: ExecutionContext, mode: SearchMode,
+): Promise<Response> {
   const cfg = await db.loadConfig(env);
   const limit = checkRunLimit(await db.runsToday(env, userId), cfg);
-  if (!limit.allow) throw new ApiError('run_limit', limit.reason ?? 'Лимит прогонов', 429);
+  if (!limit.allow) throw new ApiError('run_limit', limit.reason ?? 'Run limit reached', 429);
 
   const runId = uid();
   await env.DB.prepare('INSERT INTO runs (id,user_id,state,stage,started_at) VALUES (?,?,?,?,?)')
-    .bind(runId, userId, 'running', 'Формирую поисковые запросы', nowIso()).run();
+    .bind(runId, userId, 'running', 'Building search queries', nowIso()).run();
 
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -418,7 +436,7 @@ async function startStreamingRun(env: Env, userId: string, ctx: ExecutionContext
     }
   };
 
-  ctx.waitUntil(executeRun(env, cfg, userId, runId, send).finally(async () => {
+  ctx.waitUntil(executeRun(env, cfg, userId, runId, send, mode).finally(async () => {
     open = false;
     try { await writer.close(); } catch { /* соединение уже закрыто */ }
   }));
@@ -441,6 +459,7 @@ async function executeRun(
   userId: string,
   runId: string,
   send: (e: RunEvent) => Promise<void>,
+  mode: SearchMode,
 ): Promise<void> {
   const setStage = async (stage: string) => {
     await env.DB.prepare('UPDATE runs SET stage=? WHERE id=?').bind(stage, runId).run();
@@ -452,24 +471,25 @@ async function executeRun(
     const profile = await db.getProfile(env, userId);
 
     // Шаг прогресса — один проход одного направления (вакансии и сигналы).
-    const angles = discoverAngles(opCtx, profile).flatMap(a => DISCOVER_PASSES.map(p => `${a} · ${p}`));
+    const angles = discoverAngles(opCtx, profile).flatMap(a => passesFor(mode).map(p => `${a} · ${p}`));
     const estimateSec = estimateRunSeconds(angles.length, cfg.models.maxConcurrency);
     await send({ stage: 'plan', anglesTotal: angles.length, estimateSec });
-    await setStage('Формирую поисковые запросы');
+    await setStage('Building search queries');
 
     const existing = await db.listOpportunities(env, userId, {});
     const index = existing.map(o => ({ id: o.id, company_key: o.company_key, role_title: o.role_title }));
 
     await send({ stage: 'search', anglesDone: 0, anglesTotal: angles.length, estimateSec });
-    await setStage('Ищу вакансии и компании с сигналами');
+    await setStage(mode === 'vacancies' ? 'Searching for vacancies' : 'Searching for vacancies and companies with signals');
 
     const { items: found, outcomes } = await runDiscover(
       opCtx, profile, existing.map(o => o.company), 8,
       (done, total) => { void send({ stage: 'search', anglesDone: done, anglesTotal: total, estimateSec }); },
+      mode,
     );
 
     await send({ stage: 'dedup', anglesDone: angles.length, anglesTotal: angles.length, estimateSec });
-    await setStage('Проверяю на дубли');
+    await setStage('Checking for duplicates');
 
     let added = 0;
     for (const item of found) {
@@ -491,17 +511,17 @@ async function executeRun(
     }
 
     await send({ stage: 'save', anglesDone: angles.length, anglesTotal: angles.length, estimateSec });
-    await setStage('Сохраняю найденное');
+    await setStage('Saving results');
 
     // Разбивка по проходам (итог, запросы, источники) сохраняется в runs.error
     // всегда: через минуту «одни гипотезы» или «найдено 0» иначе не объяснить.
     const notes = describeAngleOutcomes(outcomes);
     await env.DB.prepare('UPDATE runs SET state=?, stage=?, found=?, added=?, error=?, finished_at=? WHERE id=?')
-      .bind('done', 'Готово', found.length, added, notes.join('\n') || null, nowIso(), runId).run();
+      .bind('done', 'Done', found.length, added, notes.join('\n') || null, nowIso(), runId).run();
     await send({ stage: 'done', found: found.length, added, estimateSec, notes });
   } catch (e) {
     const message = e instanceof ApiError ? e.message
-      : 'Прогон не удался. Попробуйте ещё раз — кнопки разблокированы.';
+      : 'The search run failed. Try again — the buttons are unlocked.';
     await env.DB.prepare('UPDATE runs SET state=?, error=?, finished_at=? WHERE id=?')
       .bind('failed', message, nowIso(), runId).run();
     await send({ stage: 'done', error: message });

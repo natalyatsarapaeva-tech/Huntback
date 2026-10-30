@@ -6,235 +6,238 @@
 
 export const PROMPT_META: Record<string, { label: string; where: string; tokens: Record<string, string> }> = {
   classify: {
-    label: 'Классификатор — какие факты относятся к этой вакансии',
-    where: 'перед Analyse (§10.2): дешёвый вызов сужает внимание дорогого',
-    tokens: { FACTS_INDEX: 'компактный список фактов: id · действие · роль', JD: 'текст вакансии или описание роли' },
+    label: 'Classifier — which facts are relevant to this role',
+    where: 'before Analyse (§10.2): a cheap call narrows the attention of the expensive one',
+    tokens: { FACTS_INDEX: 'compact fact list: id · action · role', JD: 'job posting text or role description' },
   },
   analyse: {
-    label: 'Разбор ожиданий',
+    label: 'Expectation analysis',
     where: 'POST /api/opportunities/:id/analyse (§10.4)',
     tokens: {
-      JD_BRANCH: 'инструкция ветки: из текста вакансии либо реконструкция',
-      OPPORTUNITY: 'компания, роль, сигнал, город, размер',
-      JD: 'текст вакансии, если есть',
-      FOCUS: 'указатели классификатора: id фактов, релевантных этой роли',
+      JD_BRANCH: 'branch instruction: from the posting text or reconstruction',
+      OPPORTUNITY: 'company, role, signal, city, size',
+      JD: 'job posting text, if any',
+      FOCUS: 'classifier pointers: ids of facts relevant to this role',
     },
   },
   audit: {
-    label: 'Аудит профиля — извлечение банка фактов',
-    where: 'POST /api/profile/audit (§10.4a шаг 1)',
+    label: 'Profile audit — fact bank extraction',
+    where: 'POST /api/profile/audit (§10.4a step 1)',
     tokens: { RESUME: 'resume_text', EXTRAS: 'extras_text' },
   },
   resume: {
-    label: 'Резюме под место',
+    label: 'Tailored resume',
     where: 'POST /api/opportunities/:id/resume (§10.5)',
     tokens: {
-      OPPORTUNITY: 'компания, роль, страна', EXPECTATIONS: 'ожидания из разбора с весом',
-      FORMAT: 'правила формата страны', PAGES: '1 или 2', LANG: 'язык документа',
+      OPPORTUNITY: 'company, role, country', EXPECTATIONS: 'expectations from the analysis with weight',
+      FORMAT: 'country format rules', PAGES: '1 or 2', LANG: 'document language',
     },
   },
   letter: {
-    label: 'Письмо',
+    label: 'Letter',
     where: 'POST /api/opportunities/:id/letter (§10.5a)',
     tokens: {
-      BRANCH: 'сопроводительное либо холодное', OPPORTUNITY: 'компания, роль, сигнал',
-      EXPECTATIONS: 'ожидания веса must', BRIDGE: 'тип моста для главного мягкого гэпа',
-      OBJECTION: 'главное возражение и ответ', CHANNEL: 'канал и представляющий',
-      TONE: 'neutral | direct | warm', WORDS: 'целевой диапазон слов', LANG: 'язык документа',
+      BRANCH: 'cover or cold', OPPORTUNITY: 'company, role, signal',
+      EXPECTATIONS: 'must-have expectations', BRIDGE: 'bridge type for the main soft gap',
+      OBJECTION: 'main objection and answer', CHANNEL: 'channel and introducer',
+      TONE: 'neutral | direct | warm', WORDS: 'target word range', LANG: 'document language',
     },
   },
   ingest: {
-    label: 'Разбор вставленной вакансии',
+    label: 'Parse a pasted job posting',
     where: 'POST /api/opportunities/import (§10.8)',
-    tokens: { TEXT: 'текст страницы или вставленный пользователем' },
+    tokens: { TEXT: 'page text or text pasted by the user' },
   },
   discover: {
-    label: 'Поиск мест',
-    where: 'фоновый прогон (§10.3)',
-    tokens: { PERIMETER: 'периметр ролей и отрасли', GEO: 'география', EXCLUDE: 'исключения', KNOWN: 'уже собранные компании', BREADTH: 'narrow|medium|wide', COUNT: 'сколько мест нужно' },
+    label: 'Place discovery (hypotheses)',
+    where: 'search run (§10.3)',
+    tokens: { PERIMETER: 'role perimeter and industries', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', BREADTH: 'narrow|medium|wide', COUNT: 'how many places are needed' },
   },
   discover_vacancies: {
-    label: 'Поиск опубликованных вакансий',
-    where: 'фоновый прогон, проход «вакансии»: веб-поиск только по сайтам вакансий и ATS',
-    tokens: { PERIMETER: 'периметр ролей и отрасли', GEO: 'география', EXCLUDE: 'исключения', KNOWN: 'уже собранные компании', COUNT: 'сколько вакансий нужно', TODAY: 'сегодняшняя дата' },
+    label: 'Published vacancy search',
+    where: 'search run, “vacancies” pass: web search limited to job sites and ATSs',
+    tokens: { PERIMETER: 'role perimeter and industries', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
   },
   check: {
-    label: 'Swap-тест письма',
-    where: 'после генерации письма (§10.10)',
-    tokens: { LETTER: 'текст письма с подменёнными компанией и ролью' },
+    label: 'Letter swap test',
+    where: 'after letter generation (§10.10)',
+    tokens: { LETTER: 'letter text with company and role swapped' },
   },
 };
 
 export const DEFAULT_PROMPTS: Record<string, string> = {
-  classify: `Ты отбираешь релевантные факты из банка достижений кандидата.
-Банк фактов:
+  classify: `You select the relevant facts from a candidate's achievement bank.
+Fact bank:
 {{FACTS_INDEX}}
 
-Роль и её описание:
+The role and its description:
 {{JD}}
 
-Верни id 15–25 фактов, наиболее относящихся к этой роли, по убыванию релевантности.
-Ничего не сочиняй и не переформулируй — только id из списка.`,
+Return the ids of the 15–25 facts most relevant to this role, in descending order of relevance.
+Do not invent or rephrase anything — only ids from the list.`,
 
-  analyse: `Ты консультант по трудоустройству руководителей. Разбираешь ОДНО место.
+  analyse: `You are a career consultant for executives. You are analysing ONE opportunity.
 
 {{JD_BRANCH}}
 
-Место:
+Opportunity:
 {{OPPORTUNITY}}
 
 {{JD}}
 
-В первую очередь рассмотри эти факты кандидата: {{FOCUS}}
+Consider these candidate facts first: {{FOCUS}}
 
-Задача: сформулировать 5–7 ожиданий работодателя, ранжировать по весу
-(must — из раздела требований; important — из обязанностей; nice — «желательно»),
-привязать к каждому КОНКРЕТНЫЙ факт из банка или цитату из профиля.
+Task: state 5–7 employer expectations, rank them by weight
+(must — from the requirements section; important — from the responsibilities; nice — "nice to have"),
+and link each one to a SPECIFIC fact from the bank or a quote from the profile.
 
-Правила, нарушать которые нельзя:
-- source_hint — дословная цитата 3–8 слов из резюме или свободных сведений. Не
-  придумывай цитату: воркер проверяет её вхождение и понижает непроверенное до gap.
-- Если факта нет — честно ставь strength: "gap" и класс разрыва.
-- Жёсткие блокеры бывают только шести видов: work_auth, license, language,
-  no_people_mgmt, scale, salary. Всё остальное — мягкий гэп с типом моста.
-- Главное возражение формулируй как РИСК нанимающего («уйдёт через год», «не
-  потянет масштаб»), а не как слабое место резюме.
-- score не считай — его считает воркер.
-- УЦП: 2–3 предложения с числом и масштабом, чем кандидат лучше типичного
-  претендента ИМЕННО на эту роль.`,
+Rules that must not be broken:
+- Write everything in English.
+- source_hint is a verbatim 3–8 word quote from the resume or the additional notes. Do not
+  invent a quote: the worker checks that it occurs and demotes anything unverified to a gap.
+- If there is no supporting fact, honestly set strength: "gap" and the gap class.
+- There are only six kinds of hard blockers: work_auth, license, language,
+  no_people_mgmt, scale, salary. Everything else is a soft gap with a bridge type.
+- Phrase the main objection as the HIRING MANAGER'S RISK ("will leave in a year", "can't
+  handle the scale"), not as a weakness of the resume.
+- Do not compute score — the worker computes it.
+- UVP: 2–3 sentences with a number and scale on why the candidate beats a typical
+  applicant for THIS particular role.`,
 
-  audit: `Ты разбираешь резюме руководителя на атомарные факты.
+  audit: `You break an executive's resume down into atomic facts.
 
-РЕЗЮМЕ:
+RESUME:
 {{RESUME}}
 
-СВОБОДНЫЕ СВЕДЕНИЯ:
+ADDITIONAL NOTES:
 {{EXTRAS}}
 
-Каждый факт — «действие → как → измеримый итог». Правила:
-- source_hint обязателен: дословная цитата 3–8 слов из текста выше. Факт без
-  проверяемой цитаты будет отброшен, поэтому не сочиняй.
-- Число выделяй в metric_value/metric_unit отдельно от формулировки.
-- scale_tags только из: team, managers, budget, pnl, geo, users.
-- Ничего не додумывай: если размер команды не назван — не пиши его.
-- В questions вынеси вопросы пользователю о фактах, где число вероятно
-  существует, но не названо («сколько человек было в команде?»). Это ВОПРОСЫ,
-  а не догадки.`,
+Each fact is "action → how → measurable outcome". Rules:
+- Write action, how, result, questions and recommendations in English.
+- source_hint is mandatory: a verbatim 3–8 word quote from the text above, in its
+  original language. A fact without a verifiable quote is discarded, so do not make things up.
+- Put the number in metric_value/metric_unit, separate from the wording.
+- scale_tags only from: team, managers, budget, pnl, geo, users.
+- Do not infer anything: if the team size is not stated, do not write it.
+- In questions, list questions for the user about facts where a number probably
+  exists but is not stated ("how many people were on the team?"). These are QUESTIONS,
+  not guesses.`,
 
-  resume: `Собери резюме под конкретное место. Это не новый текст, а ПЕРЕСТАНОВКА
-подтверждённых фактов под ожидания этого работодателя.
+  resume: `Assemble a resume for a specific opportunity. This is not new text but a REARRANGEMENT
+of confirmed facts around this employer's expectations.
 
-Место: {{OPPORTUNITY}}
-Ожидания (вес): {{EXPECTATIONS}}
-Формат: {{FORMAT}}
-Объём: {{PAGES}} стр.
-Язык документа: {{LANG}}
+Opportunity: {{OPPORTUNITY}}
+Expectations (weight): {{EXPECTATIONS}}
+Format: {{FORMAT}}
+Length: {{PAGES}} page(s)
+Document language: {{LANG}}
 
-Порядок секций фиксирован: заголовок роли → саммари 2–3 строки → строка фактов →
-ключевые компетенции 6–10 → опыт по компаниям (обратная хронология) → образование.
+The section order is fixed: role headline → 2–3 line summary → facts line →
+6–10 key competencies → experience by company (reverse chronological) → education.
 
-Правила:
-- Единственный источник: чего нет в банке фактов или тексте профиля — того нет в резюме.
-  Числа и масштаб переноси из фактов БЕЗ изменений.
-- Саммари — не «ищу позицию», а что кандидат даёт. Каждое утверждение саммари
-  обязано подтверждаться буллитом ниже; разметь это в summary_support (индекс
-  буллита в сквозной нумерации).
-- Первые 3–4 буллита закрывают ожидания веса must.
-- Формула буллита: действие → как → измеримый итог. Большинство буллитов с числом;
-  буллиты без числа не идут подряд.
-- В компетенциях запрещены слова «leadership», «лидерство» и аналоги: лидерство
-  показывается результатом в буллите.
-- Строка фактов заполняется ТОЛЬКО из структурированных полей профиля.
-- Роли старше 15 лет — одной строкой (condensed: true).
-- facts_used — id всех использованных фактов.`,
+Rules:
+- Single source: whatever is not in the fact bank or the profile text is not in the resume.
+  Carry numbers and scale over from the facts UNCHANGED.
+- The summary is not "seeking a position" but what the candidate delivers. Every summary
+  claim must be backed by a bullet below; mark this in summary_support (the bullet index
+  in running order).
+- The first 3–4 bullets cover the must-have expectations.
+- Bullet formula: action → how → measurable outcome. Most bullets carry a number;
+  bullets without a number never come in a row.
+- The words "leadership" and its equivalents are banned from competencies: leadership is
+  shown by a result in a bullet.
+- The facts line is filled ONLY from the structured profile fields.
+- Roles older than 15 years go on one line (condensed: true).
+- facts_used — ids of all facts used.`,
 
   letter: `{{BRANCH}}
 
-Место: {{OPPORTUNITY}}
-Ожидания веса must: {{EXPECTATIONS}}
-Мост для главного мягкого гэпа: {{BRIDGE}}
-Главное возражение и ответ: {{OBJECTION}}
-Канал: {{CHANNEL}}
-Тон: {{TONE}}
-Объём: {{WORDS}} слов
-Язык: {{LANG}}
+Opportunity: {{OPPORTUNITY}}
+Must-have expectations: {{EXPECTATIONS}}
+Bridge for the main soft gap: {{BRIDGE}}
+Main objection and answer: {{OBJECTION}}
+Channel: {{CHANNEL}}
+Tone: {{TONE}}
+Length: {{WORDS}} words
+Language: {{LANG}}
 
-Общие запреты:
-- Фразы-пустышки («proven track record», «командный игрок», «brinner för») запрещены.
-- Факты о компании — только из сигнала и текста вакансии. Больше ты о ней ничего не знаешь.
-- Утверждения о кандидате — только из банка фактов. Числа обязаны совпадать с резюме.
-- Не начинай с «I am writing», «Меня заинтересовала», «My name is».
-- Ровно одна конкретная просьба.
-- Абзац «почему эта компания» должен ЛОМАТЬСЯ при подмене названия компании —
-  на нём держится проверка на шаблонность.`,
+General bans:
+- Empty phrases ("proven track record", "team player", "results-driven") are banned.
+- Facts about the company come only from the signal and the job posting. You know nothing else about it.
+- Claims about the candidate come only from the fact bank. Numbers must match the resume.
+- Do not open with "I am writing", "I was excited to see", "My name is".
+- Exactly one specific ask.
+- The "why this company" paragraph must BREAK if the company name is swapped —
+  the template check depends on it.`,
 
-  ingest: `Извлеки структуру вакансии из текста. Верни строго JSON по схеме.
+  ingest: `Extract the structure of a job posting from the text. Return strictly JSON matching the schema.
 
-ТЕКСТ:
+TEXT:
 {{TEXT}}
 
-Правила:
-- Пустая строка вместо догадки: незаполненное поле лучше выдуманного.
-- contact_email заполняй, ТОЛЬКО если адрес буквально присутствует в тексте выше.
-- is_job_posting: false, если это не вакансия (например, страница «О компании»).
-- confidence: high только если компания и роль названы явно.`,
+Rules:
+- An empty string instead of a guess: an empty field is better than an invented one.
+- Fill contact_email ONLY if the address literally appears in the text above.
+- is_job_posting: false if this is not a job posting (for example, an "About us" page).
+- confidence: high only if the company and the role are named explicitly.`,
 
-  discover: `Ты ищешь МЕСТА РАБОТЫ для кандидата, а не только опубликованные вакансии.
+  discover: `You search for PLACES TO WORK for a candidate, not only published vacancies.
 
-Периметр ролей и отрасли: {{PERIMETER}}
-География: {{GEO}}
-Исключить: {{EXCLUDE}}
-Уже собрано (не предлагать снова): {{KNOWN}}
-Охват: {{BREADTH}}
-Нужно мест: {{COUNT}}
+Role perimeter and industries: {{PERIMETER}}
+Geography: {{GEO}}
+Exclude: {{EXCLUDE}}
+Already collected (do not suggest again): {{KNOWN}}
+Breadth: {{BREADTH}}
+Places needed: {{COUNT}}
 
-Правила:
-- Компании только реальные, с проверяемым источником (source_url обязателен).
-- Гипотеза обязана опираться на КОНКРЕТНЫЙ ДАТИРОВАННЫЙ сигнал не старше 6 месяцев:
-  раунд, выход на рынок, реорганизация, уход руководителя, рост, публичные
-  проблемы с операционкой. Без даты и ссылки это не гипотеза — не предлагай её.
-- Email-адреса НЕ придумывай и не указывай вообще: воркер их всё равно обнулит.
-  Имя и должность руководителя — только если они есть на странице по source_url.
-- Опубликованные вакансии ищет отдельный проход по сайтам вакансий. Здесь
-  главное — гипотезы по сигналам; вакансию, попавшуюся по дороге, тоже верни.`,
+Rules:
+- Real companies only, with a verifiable source (source_url is mandatory).
+- A hypothesis must rest on a SPECIFIC DATED signal no older than 6 months:
+  a funding round, market entry, reorganisation, an executive departure, growth, public
+  operational problems. Without a date and a link it is not a hypothesis — do not suggest it.
+- Do NOT invent email addresses and do not include any: the worker will blank them anyway.
+  The executive's name and title only if they appear on the source_url page.
+- Write signal and why_fit in English.
+- Published vacancies are found by a separate pass over job sites. Here the focus
+  is hypotheses based on signals; return any vacancy you come across along the way too.`,
 
-  discover_vacancies: `Ты ищешь ОПУБЛИКОВАННЫЕ ВАКАНСИИ для кандидата. Сегодня {{TODAY}}.
+  discover_vacancies: `You search for PUBLISHED VACANCIES for a candidate. Today is {{TODAY}}.
 
-Периметр ролей и отрасли: {{PERIMETER}}
-География: {{GEO}}
-Исключить: {{EXCLUDE}}
-Уже собрано (не предлагать снова): {{KNOWN}}
-Нужно вакансий: {{COUNT}}
+Role perimeter and industries: {{PERIMETER}}
+Geography: {{GEO}}
+Exclude: {{EXCLUDE}}
+Already collected (do not suggest again): {{KNOWN}}
+Vacancies needed: {{COUNT}}
 
-Как искать:
-- Поиск ограничен сайтами вакансий: LinkedIn Jobs, карьерные страницы компаний
-  на ATS (Teamtailor, Greenhouse, Lever, Workday, Jobylon, ReachMee, Varbi…) и
-  национальные доски (Platsbanken, Finn, Jobindex, Duunitori, jobs.ch, Reed…).
-- Делай несколько запросов: название роли на английском И на языке страны
-  (например «COO» и «driftchef», «Head of Operations» и «operativ chef»),
-  отдельно по крупным городам и странам из географии.
-- Если географий несколько, начни с приоритетной, но не ограничивайся ею.
+How to search:
+- The search is limited to job sites: LinkedIn Jobs, company career pages on ATSs
+  (Teamtailor, Greenhouse, Lever, Workday, Jobylon, ReachMee, Varbi…) and
+  national boards (Platsbanken, Finn, Jobindex, Duunitori, jobs.ch, Reed…).
+- Run several queries: the role title in English AND in the country's language
+  (for example "COO" and "driftchef", "Head of Operations" and "operativ chef"),
+  separately for the major cities and countries in the geography.
+- If there are several geographies, start with the priority one but do not stop there.
 
-Правила:
-- kind = "vacancy". source_url — адрес САМОЙ вакансии (страница объявления), не
-  поисковой выдачи и не главной страницы компании.
-- signal — одна строка: что за позиция и чем подходит; signal_date — дата
-  публикации (YYYY-MM-DD), если видна, иначе пустая строка.
-- Только открытые вакансии: не старше 60 дней и без пометки «closed / no longer
-  accepting applications».
-- Уровень — руководящий, как в периметре. Джуниор- и специалистские роли не бери.
-- Ничего не выдумывай: если вакансий не нашлось, верни пустой список.
-- Email-адреса не указывай. Контакт — только если он назван в объявлении.`,
+Rules:
+- kind = "vacancy". source_url is the address of the vacancy ITSELF (the posting page),
+  not a search results page and not the company homepage.
+- signal is one line in English: what the position is and why it fits; signal_date is the
+  publication date (YYYY-MM-DD) if visible, otherwise an empty string.
+- Open vacancies only: no older than 60 days and not marked "closed / no longer
+  accepting applications".
+- The level is managerial, as in the perimeter. Skip junior and specialist roles.
+- Make nothing up: if no vacancies were found, return an empty list.
+- Do not include email addresses. A contact only if it is named in the posting.`,
 
-  check: `Ниже письмо, в котором название компании, роль и имя адресата ЗАМЕНЕНЫ на вымышленные.
+  check: `Below is a letter in which the company name, the role and the addressee's name have been REPLACED with fictional ones.
 
 {{LETTER}}
 
-Ответь на два вопроса:
-1. broken — какие предложения перестали иметь смысл или стали ложными после замены?
-   Цитируй предложения целиком.
-2. generic — какие фразы выглядят написанными без знания компании или как
-   сгенерированные шаблоном?`,
+Answer two questions:
+1. broken — which sentences stopped making sense or became false after the swap?
+   Quote the sentences in full.
+2. generic — which phrases look written without knowledge of the company or
+   generated from a template?`,
 };
 
 /** Подстановка {{TOKEN}}. Токен без значения превращается в пустую строку. */

@@ -125,15 +125,15 @@ export function evaluateGaps(
     if (status === null) {
       blockers.push({
         kind: 'work_auth', rule: 'work_auth.unknown',
-        detail: `Право на работу для страны «${demand.country}» в профиле не заполнено`,
+        detail: `Work authorization for “${demand.country}” is not filled in your profile`,
         resolvable_by_profile: true, profile_field: 'work_auth',
       });
     } else if (status === 'needs_sponsorship' && demand.sponsorship_offered !== true) {
       blockers.push({
         kind: 'work_auth', rule: 'work_auth.needs_sponsorship',
         detail: demand.sponsorship_offered === false
-          ? 'Нужно спонсорство, вакансия его не даёт'
-          : 'Нужно спонсорство, в вакансии о нём не сказано',
+          ? 'Sponsorship needed, and the vacancy does not offer it'
+          : 'Sponsorship needed, and the vacancy does not mention it',
         resolvable_by_profile: false, profile_field: 'work_auth',
       });
     }
@@ -150,21 +150,21 @@ export function evaluateGaps(
     } else if (have === 'B2' || (haveIdx >= 0 && haveIdx >= minIdx - 1 && haveIdx >= cefrIndex('B2'))) {
       softGaps.push({
         kind: 'language', bridge: 'analogous_tools',
-        detail: `${lang}: B2 против требуемого ${min}`,
+        detail: `${lang}: B2 versus required ${min}`,
       });
     } else if (mandatory) {
       blockers.push({
         kind: 'language', rule: have ? 'language.below_required' : 'language.absent',
         detail: have
-          ? `${lang}: ${have}, требуется ${min} и язык обязателен`
-          : `${lang} не указан в профиле, а роль его требует`,
+          ? `${lang}: ${have}, ${min} required and the language is mandatory`
+          : `${lang} is not in your profile, but the role requires it`,
         resolvable_by_profile: !have,   // языка нет в профиле — возможно, он есть у человека
         profile_field: 'languages',
       });
     } else {
       softGaps.push({
         kind: 'language', bridge: 'analogous_tools',
-        detail: `${lang} ниже требуемого ${min}, но язык не обязателен`,
+        detail: `${lang} is below the required ${min}, but the language is not mandatory`,
       });
     }
   }
@@ -175,7 +175,7 @@ export function evaluateGaps(
     if (!s || (s.team_max == null && s.budget_max == null && s.managers_max == null)) {
       blockers.push({
         kind: 'scale', rule: 'scale.unknown',
-        detail: 'Масштаб управления в профиле не заполнен — сравнить не с чем',
+        detail: 'Management scale is not filled in your profile — nothing to compare with',
         resolvable_by_profile: true, profile_field: 'scale',
       });
     } else {
@@ -189,8 +189,8 @@ export function evaluateGaps(
         blockers.push({
           kind: 'scale', rule: hardBudget ? 'scale.budget_multiple' : 'scale.team_multiple',
           detail: hardBudget
-            ? `Бюджет роли больше вашего максимума в ${Math.round(budgetR!)}×`
-            : `Команда роли больше вашей в ${Math.round(Math.max(teamR ?? 0, mgrR ?? 0))}×`,
+            ? `The role's budget is ${Math.round(budgetR!)}× your maximum`
+            : `The role's team is ${Math.round(Math.max(teamR ?? 0, mgrR ?? 0))}× larger than yours`,
           resolvable_by_profile: false, profile_field: 'scale',
         });
       } else {
@@ -198,7 +198,7 @@ export function evaluateGaps(
         if (worst > 1 && worst <= th.scaleSoftRatio) {
           softGaps.push({
             kind: 'scale', bridge: 'trajectory',
-            detail: `Масштаб роли выше вашего примерно в ${worst.toFixed(1)}×`,
+            detail: `The role's scale is about ${worst.toFixed(1)}× yours`,
           });
         }
       }
@@ -210,12 +210,12 @@ export function evaluateGaps(
     if (demand.lead_without_authority) {
       softGaps.push({
         kind: 'no_people_mgmt', bridge: 'trajectory',
-        detail: 'Роль допускает влияние без прямого подчинения',
+        detail: 'The role allows leading without direct reports',
       });
     } else {
       blockers.push({
         kind: 'no_people_mgmt', rule: 'people.absent',
-        detail: 'Роль — руководитель руководителей, опыта управления людьми в профиле нет',
+        detail: 'The role manages managers, and your profile shows no people management',
         resolvable_by_profile: !profile.scale, profile_field: 'scale',
       });
     }
@@ -225,13 +225,13 @@ export function evaluateGaps(
   if (demand.license?.mandatory) {
     blockers.push({
       kind: 'license', rule: 'license.mandatory',
-      detail: `Требуется ${demand.license.name} — обязателен юридически или регуляторно`,
+      detail: `${demand.license.name} required — legally or by regulation`,
       resolvable_by_profile: true, profile_field: 'extras_text',
     });
   } else if (demand.license) {
     softGaps.push({
       kind: 'license', bridge: 'analogous_tools',
-      detail: `${demand.license.name} желателен, но не обязателен`,
+      detail: `${demand.license.name} preferred but not mandatory`,
     });
   }
 
@@ -240,7 +240,7 @@ export function evaluateGaps(
   if (demand.salary_max != null && wantMin != null && wantMin > demand.salary_max) {
     blockers.push({
       kind: 'salary', rule: 'salary.above_band',
-      detail: `Ожидания от ${wantMin} выше верха вилки ${demand.salary_max}`,
+      detail: `Your expectation of ${wantMin}+ is above the top of the range, ${demand.salary_max}`,
       resolvable_by_profile: false, profile_field: 'salary_range',
     });
   }
@@ -251,7 +251,7 @@ export function evaluateGaps(
     if (months > th.gapSoftMonths && !String(g.reason || '').trim()) {
       softGaps.push({
         kind: 'career_gap', bridge: 'explained_gap',
-        detail: `Перерыв ${g.from} — ${g.to} (${months} мес.) без указанной причины`,
+        detail: `Gap ${g.from} — ${g.to} (${months} mo) with no stated reason`,
       });
     }
   }
@@ -259,7 +259,7 @@ export function evaluateGaps(
   if (tenure != null && tenure < th.avgTenureMonths) {
     softGaps.push({
       kind: 'job_hopping', bridge: 'grouped_roles',
-      detail: `Средний срок в роли ${tenure} мес. — ниже ${th.avgTenureMonths}`,
+      detail: `Average tenure ${tenure} mo — below ${th.avgTenureMonths}`,
     });
   }
 
@@ -372,7 +372,7 @@ export function demoteUnverified(
       strength: 'gap' as const,
       gap_class: e.gap_class ?? 'soft',
       evidence: e.evidence,
-      gap_answer: e.gap_answer || 'Не подтверждено профилем',
+      gap_answer: e.gap_answer || 'Not supported by the profile',
     };
   });
 }

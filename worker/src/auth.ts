@@ -52,19 +52,19 @@ function googleConfig(env: Env): GoogleConfig {
   ].filter(Boolean) as string[];
   if (missing.length) {
     throw new SetupError(
-      `Не заданы секреты воркера: ${missing.join(', ')}.`,
-      'Панель Cloudflare → Compute (Workers) → huntback → Settings → '
-      + 'Variables and Secrets → Add, тип Secret. Инструкция — SETUP.md, шаг 8.',
+      `Worker secrets are not set: ${missing.join(', ')}.`,
+      'Cloudflare dashboard → Compute (Workers) → huntback → Settings → '
+      + 'Variables and Secrets → Add, type Secret. Instructions: SETUP.md, step 8.',
     );
   }
   // Идентификатор клиента Google всегда оканчивается так. Проверка ловит
   // самую обидную ошибку: Client ID и Client secret перепутаны местами.
   if (!clientId.endsWith('.apps.googleusercontent.com')) {
     throw new SetupError(
-      'GOOGLE_CLIENT_ID не похож на идентификатор клиента Google.',
-      'Он должен оканчиваться на .apps.googleusercontent.com. Проверьте, не '
-      + 'перепутаны ли Client ID и Client secret, и что клиент создан с типом '
-      + '«Web application», а не «Desktop app».',
+      'GOOGLE_CLIENT_ID does not look like a Google client ID.',
+      'It must end with .apps.googleusercontent.com. Check that the Client ID and '
+      + 'Client secret are not swapped, and that the client was created as '
+      + '“Web application”, not “Desktop app”.',
     );
   }
   // TOKEN_ENC_KEY проверяем ЗДЕСЬ, хотя нужен он только в конце: им шифруется
@@ -74,19 +74,19 @@ function googleConfig(env: Env): GoogleConfig {
   const encKeyRaw = String(env.TOKEN_ENC_KEY ?? '').trim();
   if (!encKeyRaw) {
     throw new SetupError(
-      'Не задан секрет воркера TOKEN_ENC_KEY.',
-      'Им шифруется токен доступа к вашему Google-диску перед записью в базу. '
-      + 'Нужны 32 случайных байта в base64 — как получить, написано в SETUP.md, шаг 8.',
+      'The TOKEN_ENC_KEY worker secret is not set.',
+      'It encrypts the Google Drive access token before it is stored. '
+      + 'It needs 32 random bytes in base64 — see SETUP.md, step 8.',
     );
   }
   let encKeyBytes = 0;
   try { encKeyBytes = atob(encKeyRaw).length; } catch { encKeyBytes = -1; }
   if (encKeyBytes !== 32) {
     throw new SetupError(
-      'TOKEN_ENC_KEY задан, но это не 32 байта в base64.',
+      'TOKEN_ENC_KEY is set, but it is not 32 bytes in base64.',
       encKeyBytes === -1
-        ? 'Значение не похоже на base64. Сгенерируйте заново — SETUP.md, шаг 8.'
-        : `Получилось ${encKeyBytes} байт вместо 32. Сгенерируйте заново — SETUP.md, шаг 8.`,
+        ? 'The value does not look like base64. Generate it again — SETUP.md, step 8.'
+        : `Got ${encKeyBytes} bytes instead of 32. Generate it again — SETUP.md, step 8.`,
     );
   }
 
@@ -101,11 +101,11 @@ function googleConfig(env: Env): GoogleConfig {
 function setupPage(e: SetupError): Response {
   const esc = (t: string) => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Huntback — настройка не завершена</title>`
+    `<!doctype html><meta charset="utf-8"><title>Huntback — setup incomplete</title>`
     + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 1.5rem;color:#27333c}`
     + `h1{font-size:1.3rem;margin:0 0 .75rem}code{background:#f0f2f4;padding:.1em .35em;border-radius:4px}`
     + `p{margin:0 0 1rem}.hint{color:#64798b;font-size:.94rem}</style>`
-    + `<h1>Вход ещё не настроен</h1><p>${esc(e.message)}</p><p class="hint">${esc(e.hint)}</p>`,
+    + `<h1>Sign-in is not set up yet</h1><p>${esc(e.message)}</p><p class="hint">${esc(e.hint)}</p>`,
     { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
   );
 }
@@ -140,18 +140,18 @@ export async function authStart(env: Env, url: URL): Promise<Response> {
 /** Отказы, с которыми Google возвращает пользователя на наш callback. */
 const OAUTH_REFUSALS: Record<string, { message: string; hint: string }> = {
   access_denied: {
-    message: 'Google не пустил в приложение.',
-    hint: 'Либо вы отменили вход, либо этот аккаунт не в списке тестировщиков: '
+    message: 'Google did not let you into the app.',
+    hint: 'Either you cancelled sign-in, or this account is not on the test users list: '
       + 'console.cloud.google.com → Google Auth Platform → Audience → Test users. '
-      + 'Адрес должен совпадать с тем, которым вы входите.',
+      + 'The address must match the one you sign in with.',
   },
   admin_policy_enforced: {
-    message: 'Политика вашей организации Google запрещает вход в это приложение.',
-    hint: 'Войдите личным аккаунтом Google либо попросите администратора разрешить приложение.',
+    message: 'Your Google organization policy blocks sign-in to this app.',
+    hint: 'Sign in with a personal Google account or ask your admin to allow the app.',
   },
   org_internal: {
-    message: 'Приложение настроено только для пользователей одной организации.',
-    hint: 'В Google Auth Platform → Audience поменяйте тип на External.',
+    message: 'The app is configured for users of a single organization only.',
+    hint: 'In Google Auth Platform → Audience, change the type to External.',
   },
 };
 
@@ -163,17 +163,17 @@ export async function authCallback(env: Env, url: URL): Promise<Response> {
   if (refusal) {
     const known = OAUTH_REFUSALS[refusal];
     return setupPage(new SetupError(
-      known?.message ?? `Google отказал во входе: ${refusal}.`,
-      known?.hint ?? 'Попробуйте войти заново. Если повторяется — пришлите код ошибки.',
+      known?.message ?? `Google refused sign-in: ${refusal}.`,
+      known?.hint ?? 'Try signing in again. If it keeps happening, send the error code.',
     ));
   }
 
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
-  if (!code || !state) throw new ApiError('auth_bad_request', 'Google вернул неполный ответ', 400);
+  if (!code || !state) throw new ApiError('auth_bad_request', 'Google returned an incomplete response', 400);
 
   const verifier = await env.KV.get(`pkce:${state}`);
-  if (!verifier) throw new ApiError('auth_state_expired', 'Вход занял слишком много времени. Начните заново.', 400);
+  if (!verifier) throw new ApiError('auth_state_expired', 'Sign-in took too long. Please start again.', 400);
   await env.KV.delete(`pkce:${state}`);
 
   const cfg = googleConfig(env);
@@ -189,11 +189,11 @@ export async function authCallback(env: Env, url: URL): Promise<Response> {
       code_verifier: verifier,
     }),
   });
-  if (!res.ok) throw new ApiError('auth_exchange_failed', 'Не удалось завершить вход через Google', 502);
+  if (!res.ok) throw new ApiError('auth_exchange_failed', 'Could not complete Google sign-in', 502);
   const tok = await res.json() as { access_token: string; refresh_token?: string; expires_in: number; id_token: string };
 
   const claims = decodeIdToken(tok.id_token);
-  if (!claims?.sub || !claims.email) throw new ApiError('auth_no_identity', 'Google не вернул идентификатор', 502);
+  if (!claims?.sub || !claims.email) throw new ApiError('auth_no_identity', 'Google did not return an identity', 502);
 
   const existing = await env.DB.prepare('SELECT id FROM users WHERE google_sub = ?').bind(claims.sub).first<{ id: string }>();
   const userId = existing?.id ?? uid();
@@ -290,9 +290,9 @@ export function readCookie(request: Request, name: string): string | null {
  */
 export async function requireSession(env: Env, request: Request): Promise<string> {
   const sid = readCookie(request, 'sid');
-  if (!sid) throw new ApiError('unauthorized', 'Нужно войти', 401);
+  if (!sid) throw new ApiError('unauthorized', 'Please sign in', 401);
   const raw = await env.KV.get(`session:${sid}`);
-  if (!raw) throw new ApiError('unauthorized', 'Сессия истекла — войдите заново', 401);
+  if (!raw) throw new ApiError('unauthorized', 'Session expired — please sign in again', 401);
   const s = JSON.parse(raw) as Session;
 
   // CSRF double-submit на мутирующих запросах (§5.3).
@@ -300,7 +300,7 @@ export async function requireSession(env: Env, request: Request): Promise<string
     const header = request.headers.get('X-Huntback-CSRF');
     const expected = await env.KV.get(`csrf:${sid}`);
     if (!header || !expected || header !== expected) {
-      throw new ApiError('csrf', 'Не удалось подтвердить запрос. Обновите страницу.', 403);
+      throw new ApiError('csrf', 'Could not verify the request. Reload the page.', 403);
     }
   }
 
@@ -328,7 +328,7 @@ export async function googleAccessToken(env: Env, userId: string): Promise<strin
 
   const row = await env.DB.prepare('SELECT refresh_token_enc FROM users WHERE id=?')
     .bind(userId).first<{ refresh_token_enc: ArrayBuffer | null }>();
-  if (!row?.refresh_token_enc) throw new ApiError('google_reauth_required', 'Нужно заново разрешить доступ к Google', 401);
+  if (!row?.refresh_token_enc) throw new ApiError('google_reauth_required', 'Please grant Google access again', 401);
 
   const refresh = await decryptToken(env, row.refresh_token_enc);
   const cfgRefresh = googleConfig(env);
@@ -345,7 +345,7 @@ export async function googleAccessToken(env: Env, userId: string): Promise<strin
     if (tok.error === 'invalid_grant') {
       await env.DB.prepare('UPDATE users SET google_reauth_required=1 WHERE id=?').bind(userId).run();
     }
-    throw new ApiError('google_reauth_required', 'Доступ к Google отозван — войдите заново', 401);
+    throw new ApiError('google_reauth_required', 'Google access was revoked — please sign in again', 401);
   }
   await env.KV.put(`gtoken:${userId}`, tok.access_token, { expirationTtl: Math.max(60, (tok.expires_in ?? 3600) - 60) });
   return tok.access_token;

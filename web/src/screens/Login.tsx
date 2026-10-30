@@ -14,50 +14,50 @@ export function Login({ onDemo, demoOnly = false }: { onDemo: () => void; demoOn
           <span className="brand-mark" style={{ width: 26, height: 26 }} />
           Huntback
         </div>
-        <h1>Места работы, а не только вакансии</h1>
+        <h1>Places to work, not just vacancies</h1>
         <p className="login-lede">
-          Находит компании, где роль назревает, сопоставляет их ожидания с фактами
-          вашего опыта и честно показывает разрывы.
+          Finds companies where a role is taking shape, matches their expectations against
+          the facts of your experience and shows the gaps honestly.
         </p>
 
         {demoOnly ? (
           <>
             <div className="scopes">
               <div className="scope"><span aria-hidden>·</span><span>
-                Это <b>витрина интерфейса</b>: серверной части рядом нет, поэтому вход
-                через Google здесь не работает и кнопки для него нет.
+                This is an <b>interface showcase</b>: there is no backend here, so Google
+                sign-in does not work and there is no button for it.
               </span></div>
               <div className="scope"><span aria-hidden>·</span><span>
-                Данные вымышленные. Но аудит профиля, совпадение с местом, жёсткие
-                блокеры и проверки документов считает <b>настоящее ядро</b> — то же,
-                что работает в приложении.
+                The data is fictional. But the profile audit, the match score, hard
+                blockers and document checks are computed by the <b>real core</b> — the same
+                one the app runs.
               </span></div>
             </div>
 
             <button className="btn btn-primary btn-block" onClick={onDemo}>
-              Открыть демо
+              Open the demo
             </button>
             <p className="small muted mt-12">
-              Исходный код и техническое задание —{' '}
+              Source code and specification —{' '}
               <a href="https://github.com/natalyatsarapaeva-tech/huntback">GitHub</a>.
             </p>
           </>
         ) : (
           <>
             <div className="scopes">
-              <div className="scope"><span aria-hidden>·</span><span><b>Ваш профиль Google</b> — чтобы узнать вас при следующем входе.</span></div>
-              <div className="scope"><span aria-hidden>·</span><span><b>Одна таблица на вашем диске</b> — приложение создаёт её само и видит только её. Доступа к остальным файлам оно не получает.</span></div>
-              <div className="scope"><span aria-hidden>·</span><span><b>Почта не подключается.</b> Письма вы отправляете сами из своего ящика.</span></div>
+              <div className="scope"><span aria-hidden>·</span><span><b>Your Google profile</b> — to recognise you next time you sign in.</span></div>
+              <div className="scope"><span aria-hidden>·</span><span><b>One spreadsheet in your Drive</b> — the app creates it and can see only that file. It gets no access to your other files.</span></div>
+              <div className="scope"><span aria-hidden>·</span><span><b>Email is not connected.</b> You send letters yourself from your own mailbox.</span></div>
             </div>
 
-            <a className="btn btn-primary btn-block" href="/api/auth/start">Войти через Google</a>
+            <a className="btn btn-primary btn-block" href="/api/auth/start">Sign in with Google</a>
 
             <button className="btn btn-ghost btn-block mt-12" onClick={onDemo}>
-              Посмотреть на демо-данных
+              Try it with demo data
             </button>
             <p className="small muted mt-12">
-              Резюме — персональные данные. Они хранятся в ЕС, передаются модели без
-              сохранения истории и удаляются вместе с аккаунтом.
+              Your resume is personal data. It is stored in the EU, sent to the model without
+              history retention and deleted together with your account.
             </p>
           </>
         )}

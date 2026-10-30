@@ -25,42 +25,42 @@ import type {
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ── Демо-кандидат ───────────────────────────────────────────────────────────
-const RESUME = `Мария Ковалёва — VP Operations / Head of Supply Chain
+const RESUME = `Maria Kovaleva — VP Operations / Head of Supply Chain
 
-Nordic Freight Group, Стокгольм — Head of Operations, 2021 — н.в.
-Отвечаю за операции в Швеции, Дании и Финляндии. Вырастила операционную команду
-с 8 до 25 человек, из них 4 менеджера, бюджет 4,2 млн EUR.
-Сократила срок поставки на 40% за два квартала, перестроив планирование между
-площадками. Вывела складскую сеть на единый WMS, экономия 620 тыс. EUR в год.
-Удержала команду при реорганизации 2023 года: ушёл один человек из 25.
+Nordic Freight Group, Stockholm — Head of Operations, 2021 — present
+Responsible for operations in Sweden, Denmark and Finland. Grew the operations team
+from 8 to 25 people, including 4 managers, budget EUR 4.2M.
+Cut delivery lead time by 40% in two quarters by rebuilding planning across
+sites. Moved the warehouse network to a single WMS, saving EUR 620K a year.
+Kept the team through the 2023 reorganisation: one person out of 25 left.
 
-Baltic Logistics, Рига — Operations Manager, 2017 — 2021
-Команда 8 человек. Запустила две новые площадки, вышли на плановый объём
-за 5 месяцев вместо 9. Снизила долю просроченных отгрузок с 12% до 3%.
+Baltic Logistics, Riga — Operations Manager, 2017 — 2021
+Team of 8. Launched two new sites, reached planned volume
+in 5 months instead of 9. Reduced late shipments from 12% to 3%.
 
-Rautala Group, Хельсинки — Supply Chain Analyst, 2014 — 2017
-Аналитика S&OP. Построила модель прогноза спроса, точность выросла на 18%.
+Rautala Group, Helsinki — Supply Chain Analyst, 2014 — 2017
+S&OP analytics. Built a demand forecasting model, accuracy improved by 18%.
 
-Образование: MSc Industrial Engineering, KTH, 2014.`;
+Education: MSc Industrial Engineering, KTH, 2014.`;
 
-const EXTRAS = `Выросла четверых менеджеров из специалистов — двое сейчас руководят
-своими направлениями. Перерыв 2020–2021 — учёба, программа Executive в SSE.
-Готова к релокации внутри ЕС, релокационный пакет не нужен.`;
+const EXTRAS = `Grew four specialists into managers — two of them now run
+their own areas. Gap 2020–2021 — studies, Executive programme at SSE.
+Ready to relocate within the EU, no relocation package needed.`;
 
 let profile: Profile = {
   resume_text: RESUME,
   extras_text: EXTRAS,
   perimeter: 'VP Operations; Head of Supply Chain; Director of Logistics',
-  industries: 'логистика, ритейл, производство',
-  exclude: 'консалтинг, агентства',
+  industries: 'logistics, retail, manufacturing',
+  exclude: 'consulting, agencies',
   geo: 'Sweden, Germany',
   breadth: 'medium',
   languages: [{ lang: 'Russian', cefr: 'C2' }, { lang: 'English', cefr: 'C1' }, { lang: 'Swedish', cefr: 'B1' }],
   work_auth: [{ region: 'Sweden', status: 'permit' }, { region: 'EU', status: 'permit' }],
   relocation: { ready: 'yes', package_needed: false },
-  scale: { team_max: 25, managers_max: 4, budget_max: 4_200_000, pnl: false, geo_scope: '3 страны', users_or_clients: '' },
+  scale: { team_max: 25, managers_max: 4, budget_max: 4_200_000, pnl: false, geo_scope: '3 countries', users_or_clients: '' },
   years_exp: 12,
-  gaps: [{ from: '2020-02-01', to: '2021-01-01', reason: 'учёба, Executive-программа SSE' }],
+  gaps: [{ from: '2020-02-01', to: '2021-01-01', reason: 'studies, SSE Executive programme' }],
   salary_range: '',
   linkedin_url: 'https://linkedin.com/in/mkovaleva',
   linkedin_complete: false,
@@ -82,15 +82,15 @@ const f = (
 });
 
 let facts: Fact[] = [
-  f('f1', 'Вырастила операционную команду', 'с 8 до 25 человек, 4 менеджера', 25, 'человек', 'Head of Operations', ['team', 'managers'], 'команду с 8 до 25 человек'),
-  f('f2', 'Сократила срок поставки', 'на 40% за два квартала', 40, '%', 'Head of Operations', [], 'срок поставки на 40%'),
-  f('f3', 'Вывела складскую сеть на единый WMS', 'экономия 620 тыс. EUR в год', 620000, 'EUR', 'Head of Operations', ['budget'], 'единый WMS, экономия 620'),
-  f('f4', 'Удержала команду при реорганизации', 'ушёл 1 человек из 25', 1, 'человек', 'Head of Operations', ['team'], 'ушёл один человек из 25'),
-  f('f5', 'Запустила две новые площадки', 'плановый объём за 5 месяцев вместо 9', 5, 'месяцев', 'Operations Manager', [], 'плановый объём за 5 месяцев'),
-  f('f6', 'Снизила долю просроченных отгрузок', 'с 12% до 3%', 3, '%', 'Operations Manager', [], 'просроченных отгрузок с 12% до 3%'),
-  f('f7', 'Построила модель прогноза спроса', 'точность выросла на 18%', 18, '%', 'Supply Chain Analyst', [], 'точность выросла на 18%'),
-  f('f8', 'Вырастила четверых менеджеров из специалистов', 'двое руководят своими направлениями', 4, 'менеджера', 'Head of Operations', ['managers'], 'четверых менеджеров из специалистов'),
-  f('f9', 'Отвечала за операции в трёх странах', 'Швеция, Дания, Финляндия', null, '', 'Head of Operations', ['geo'], 'операции в Швеции, Дании и Финляндии'),
+  f('f1', 'Grew the operations team', 'from 8 to 25 people, 4 managers', 25, 'people', 'Head of Operations', ['team', 'managers'], 'team from 8 to 25 people'),
+  f('f2', 'Cut delivery lead time', 'by 40% in two quarters', 40, '%', 'Head of Operations', [], 'delivery lead time by 40%'),
+  f('f3', 'Moved the warehouse network to a single WMS', 'saving EUR 620K a year', 620000, 'EUR', 'Head of Operations', ['budget'], 'single WMS, saving EUR 620K'),
+  f('f4', 'Kept the team through a reorganisation', '1 person out of 25 left', 1, 'people', 'Head of Operations', ['team'], 'one person out of 25 left'),
+  f('f5', 'Launched two new sites', 'planned volume in 5 months instead of 9', 5, 'months', 'Operations Manager', [], 'planned volume in 5 months'),
+  f('f6', 'Reduced late shipments', 'from 12% to 3%', 3, '%', 'Operations Manager', [], 'late shipments from 12% to 3%'),
+  f('f7', 'Built a demand forecasting model', 'accuracy improved by 18%', 18, '%', 'Supply Chain Analyst', [], 'accuracy improved by 18%'),
+  f('f8', 'Grew four specialists into managers', 'two now run their own areas', 4, 'managers', 'Head of Operations', ['managers'], 'four specialists into managers'),
+  f('f9', 'Ran operations in three countries', 'Sweden, Denmark, Finland', null, '', 'Head of Operations', ['geo'], 'operations in Sweden, Denmark and Finland'),
 ];
 
 // ── Демо-места ──────────────────────────────────────────────────────────────
@@ -101,38 +101,39 @@ const opp = (o: Partial<Opportunity> & { id: string; company: string; role_title
 
 let opportunities: Opportunity[] = [
   opp({
-    id: 'o1', company: 'Nordpakk', role_title: 'VP Operations', industry: 'логистика последней мили',
-    city: 'Стокгольм', country: 'Sweden', size: '900+', kind: 'vacancy', status: 'analysed', score: 78,
+    id: 'o1', company: 'Nordpakk', role_title: 'VP Operations', industry: 'last-mile logistics',
+    city: 'Stockholm', country: 'Sweden', size: '900+', kind: 'vacancy', status: 'analysed', score: 78,
     source_url: 'https://example.com/jobs/nordpakk-vp-ops',
     jd_text: 'We are looking for a VP Operations to lead our Nordic operations...',
-    signal: 'Расширение в Данию, объявлено в июне 2026',
+    signal: 'Expansion into Denmark, announced June 2026',
   }),
   opp({
     id: 'o2', company: 'Kleiderwerk Logistik SE', role_title: 'Director of Fulfilment', industry: 'e-commerce',
-    city: 'Берлин', country: 'Germany', size: '5000+', kind: 'vacancy', status: 'analysed', score: 64,
+    city: 'Berlin', country: 'Germany', size: '5000+', kind: 'vacancy', status: 'analysed', score: 64,
     source_url: 'https://example.com/jobs/kleiderwerk-dir-fulfilment',
     jd_text: 'Fließend Deutsch erforderlich. Verantwortung für ein Team von 60 Mitarbeitenden...',
-    signal: 'Новый распределительный центр под Лейпцигом, август 2026',
+    signal: 'New distribution centre near Leipzig, August 2026',
   }),
   opp({
-    id: 'o3', company: 'Norrbröd', role_title: 'Head of Supply Chain', industry: 'производство продуктов',
-    city: 'Умео', country: 'Sweden', size: '400', kind: 'hypothesis', status: 'new',
+    id: 'o3', company: 'Norrbröd', role_title: 'Head of Supply Chain', industry: 'food manufacturing',
+    city: 'Umeå', country: 'Sweden', size: '400', kind: 'hypothesis', status: 'new',
     source_url: 'https://example.com/news/norrbrod-expansion',
     source_date: '2026-07-14',
-    signal: 'Запуск второй линии после пожара на основном заводе, июль 2026 — операционка обычно не успевает за производством',
+    signal: 'Second line launched after a fire at the main plant, July 2026 — operations rarely keep pace with production',
   }),
   opp({
-    id: 'o4', company: 'Snabbud', role_title: 'Head of Network Operations', industry: 'доставка',
-    city: 'Стокгольм', country: 'Sweden', size: '600', kind: 'hypothesis', status: 'new',
+    id: 'o4', company: 'Snabbud', role_title: 'Head of Network Operations', industry: 'delivery',
+    city: 'Stockholm', country: 'Sweden', size: '600', kind: 'hypothesis', status: 'new',
     source_url: 'https://example.com/news/snabbud-series-c',
     source_date: '2026-05-22',
-    signal: 'Раунд Series C в мае 2026, заявлен выход на три новых рынка',
+    signal: 'Series C round in May 2026, entry into three new markets announced',
+    label: 'low_chance',
   }),
   opp({
-    id: 'o5', company: 'Matkassen', role_title: 'VP Supply Chain', industry: 'онлайн-продукты',
-    city: 'Осло', country: 'Norway', size: '1200', kind: 'vacancy', status: 'new',
+    id: 'o5', company: 'Matkassen', role_title: 'VP Supply Chain', industry: 'online groceries',
+    city: 'Oslo', country: 'Norway', size: '1200', kind: 'vacancy', status: 'new',
     source_url: 'https://example.com/jobs/matkassen-vp-sc',
-    signal: 'Реорганизация цепочки поставок после смены CEO, апрель 2026',
+    signal: 'Supply chain reorganisation after a CEO change, April 2026',
   }),
 ];
 
@@ -158,29 +159,29 @@ const exp = (
 const analyses: Record<string, Analysis> = {
   o1: {
     expectations: [
-      exp('Управление операциями в нескольких скандинавских странах', 'must', 'Операции в Швеции, Дании и Финляндии в Nordic Freight', 'f9', 'операции в Швеции, Дании и Финляндии', 'strong'),
-      exp('Команда от 40 человек с менеджерами в подчинении', 'must', 'Команда 25 человек, 4 менеджера', 'f1', 'команду с 8 до 25 человек', 'partial', 'soft', 'trajectory', 'Рост команды втрое за три года и управление менеджерами, а не только специалистами'),
-      exp('Сокращение операционных издержек с измеримым результатом', 'must', 'Единый WMS, экономия 620 тыс. EUR в год', 'f3', 'единый WMS, экономия 620', 'strong'),
-      exp('Опыт быстрого масштабирования сети', 'important', 'Две площадки на плановый объём за 5 месяцев вместо 9', 'f5', 'плановый объём за 5 месяцев', 'strong'),
-      exp('Шведский язык на рабочем уровне', 'important', 'Swedish B1', null, '', 'partial', 'soft', 'analogous_tools', 'B1 и рабочий английский; в Nordic Freight операционные встречи шли на английском'),
-      exp('Опыт в last-mile', 'nice', 'Опыт в грузовой логистике, не в последней миле', null, '', 'gap', 'soft', 'transferable_metrics', 'Метрики срока и просрочки читаются одинаково в обеих моделях'),
+      exp('Running operations across several Nordic countries', 'must', 'Operations in Sweden, Denmark and Finland at Nordic Freight', 'f9', 'operations in Sweden, Denmark and Finland', 'strong'),
+      exp('A team of 40+ with managers reporting in', 'must', 'Team of 25, 4 managers', 'f1', 'team from 8 to 25 people', 'partial', 'soft', 'trajectory', 'Tripled the team in three years and manages managers, not just specialists'),
+      exp('Measurable operating cost reduction', 'must', 'Single WMS, saving EUR 620K a year', 'f3', 'single WMS, saving EUR 620K', 'strong'),
+      exp('Experience scaling a network fast', 'important', 'Two sites at planned volume in 5 months instead of 9', 'f5', 'planned volume in 5 months', 'strong'),
+      exp('Working-level Swedish', 'important', 'Swedish B1', null, '', 'partial', 'soft', 'analogous_tools', 'B1 plus working English; operations meetings at Nordic Freight ran in English'),
+      exp('Last-mile experience', 'nice', 'Freight logistics experience, not last mile', null, '', 'gap', 'soft', 'transferable_metrics', 'Lead time and late-shipment metrics read the same in both models'),
     ],
     blockers: [], score: 0,
-    uvp: 'Единственный кандидат с подтверждённым опытом одновременного управления операциями в трёх скандинавских странах и доказанным сокращением срока поставки на 40% — ровно та задача, которая возникает при выходе в Данию.',
-    objection: { risk: 'Не потянет масштаб: у нас 40+ человек, у неё 25', answer: 'Команда выросла с 8 до 25 под её управлением, и в ней уже четыре менеджера — это управление руководителями, а не специалистами' },
+    uvp: 'The only candidate with proven experience running operations in three Nordic countries at once and a demonstrated 40% cut in delivery lead time — exactly the task that comes with entering Denmark.',
+    objection: { risk: 'Can’t handle the scale: we have 40+ people, the candidate had 25', answer: 'The team grew from 8 to 25 under the candidate and already includes four managers — that is managing managers, not just specialists' },
     reconstructed: false,
   },
   o2: {
     expectations: [
-      exp('Свободный немецкий', 'must', 'Немецкий в профиле отсутствует', null, '', 'gap', 'hard'),
-      exp('Управление командой от 60 человек', 'must', 'Команда 25 человек, 4 менеджера', 'f1', 'команду с 8 до 25 человек', 'partial', 'soft', 'trajectory', 'Траектория роста команды и управление менеджерами'),
-      exp('Опыт e-commerce fulfilment', 'must', 'Опыт грузовой и складской логистики', 'f3', 'единый WMS, экономия 620', 'partial', 'soft', 'transferable_metrics', 'Метрики WMS и срока переносятся между моделями'),
-      exp('Оптимизация складских процессов', 'important', 'Единый WMS, экономия 620 тыс. EUR в год', 'f3', 'единый WMS, экономия 620', 'strong'),
-      exp('Работа в матричной структуре', 'nice', 'Три страны, четыре менеджера', 'f8', 'четверых менеджеров из специалистов', 'strong'),
+      exp('Fluent German', 'must', 'No German in the profile', null, '', 'gap', 'hard'),
+      exp('Managing a team of 60+', 'must', 'Team of 25, 4 managers', 'f1', 'team from 8 to 25 people', 'partial', 'soft', 'trajectory', 'Team growth trajectory and managing managers'),
+      exp('E-commerce fulfilment experience', 'must', 'Freight and warehouse logistics experience', 'f3', 'single WMS, saving EUR 620K', 'partial', 'soft', 'transferable_metrics', 'WMS and lead time metrics transfer between models'),
+      exp('Warehouse process optimisation', 'important', 'Single WMS, saving EUR 620K a year', 'f3', 'single WMS, saving EUR 620K', 'strong'),
+      exp('Working in a matrix structure', 'nice', 'Three countries, four managers', 'f8', 'four specialists into managers', 'strong'),
     ],
     blockers: [], score: 0,
-    uvp: 'Складская трансформация с подтверждённой экономией 620 тыс. EUR в год и опыт запуска площадок вдвое быстрее плана.',
-    objection: { risk: 'Язык: без немецкого не сможет работать со складским персоналом', answer: '' },
+    uvp: 'A warehouse transformation with proven savings of EUR 620K a year and experience launching sites nearly twice as fast as planned.',
+    objection: { risk: 'Language: without German the candidate can’t work with warehouse staff', answer: '' },
     reconstructed: false,
   },
 };
@@ -206,11 +207,15 @@ export const mockApi: Api = {
   async me(): Promise<Me> {
     await delay(120);
     return {
-      user: { email: 'maria@example.com', name: 'Мария Ковалёва' },
+      user: { email: 'maria@example.com', name: 'Maria Kovaleva' },
       profile_filled: profile.resume_text.trim().length > 0,
       spreadsheet_url: 'https://docs.google.com/spreadsheets/d/demo',
       reauth_required: false,
     };
+  },
+
+  async logout() {
+    await delay(80);
   },
 
   async getProfile() {
@@ -265,6 +270,15 @@ export const mockApi: Api = {
     return raw ? { analysis: withBlockers(id, raw) } : {};
   },
 
+  async fetchJobText(id) {
+    await delay(900);
+    const o = opportunities.find(x => x.id === id)!;
+    const jd_text = `${o.role_title} — ${o.company}, ${o.city ?? ''}\n\n`
+      + 'Demo mode: in the live app this is the text downloaded from the source link.';
+    opportunities = opportunities.map(x => (x.id === id ? { ...x, jd_text } : x));
+    return { jd_text };
+  },
+
   async archiveOpportunity(id) {
     await delay(120);
     opportunities = opportunities.map(o => (o.id === id ? { ...o, status: 'archived' } : o));
@@ -276,16 +290,16 @@ export const mockApi: Api = {
       // Ровно то, что делают LinkedIn и Indeed (§10.8) — ветка не аварийная.
       if (/linkedin|indeed/i.test(input.url)) {
         throw Object.assign(new Error(
-          'Страница закрыта для загрузки: так делают LinkedIn, Indeed и часть корпоративных ATS. '
-          + 'Откройте её в браузере, скопируйте текст вакансии и вставьте во второе поле.'), { code: 'jd_fetch_blocked' });
+          'The page blocks downloading: LinkedIn, Indeed and some corporate ATSs do this. '
+          + 'Open it in your browser, copy the job posting text and paste it into the text field.'), { code: 'jd_fetch_blocked' });
       }
     }
     const text = input.text ?? 'Head of Logistics, Stockholm. We are looking for an experienced operations leader...';
     const parsed: ParsedJob = {
-      company: 'Apotekly', role_title: 'Head of Logistics', city: 'Стокгольм', country: 'Sweden',
+      company: 'Apotekly', role_title: 'Head of Logistics', city: 'Stockholm', country: 'Sweden',
       industry: 'e-commerce', size: '1000+', language: 'sv', seniority: 'Head',
-      requirements: ['Опыт управления складом от 30 человек', 'Шведский на рабочем уровне', 'WMS'],
-      responsibilities: ['Складские операции', 'Планирование сети'],
+      requirements: ['Managing a warehouse team of 30+', 'Working-level Swedish', 'WMS'],
+      responsibilities: ['Warehouse operations', 'Network planning'],
       contact_email: '', salary: '', posted_date: '2026-09-01',
       confidence: 'high', is_job_posting: true,
     };
@@ -322,39 +336,39 @@ export const mockApi: Api = {
     const doc = {
       headline: o.role_title,
       summary: [
-        'Операционный руководитель с опытом управления цепочкой поставок в трёх скандинавских странах.',
-        'Команда до 25 человек и четырёх менеджеров, бюджет 4,2 млн EUR.',
+        'Operations leader who has run the supply chain across three Nordic countries.',
+        'Team of up to 25 people and four managers, budget EUR 4.2M.',
       ],
       summary_support: [0, 1],
-      facts_line: 'Разрешение на работу в ЕС — спонсорство не требуется · English C1, Swedish B1, Russian C2 · готова к релокации · linkedin.com/in/mkovaleva',
-      competencies: ['S&OP', 'WMS', 'Планирование сети', 'Бюджетирование', 'Lean', 'Запуск площадок', 'KPI операций'],
+      facts_line: 'EU work permit — no sponsorship needed · English C1, Swedish B1, Russian C2 · open to relocation · linkedin.com/in/mkovaleva',
+      competencies: ['S&OP', 'WMS', 'Network planning', 'Budgeting', 'Lean', 'Site launches', 'Operations KPIs'],
       experience: [
         {
           company: 'Nordic Freight Group', role_title: 'Head of Operations',
           period_from: '2021-02', period_to: null,
-          context_line: 'Команда 25 человек, 4 менеджера, бюджет 4,2 млн EUR, 3 страны',
+          context_line: 'Team of 25, 4 managers, budget EUR 4.2M, 3 countries',
           bullets: [
-            'Сократила срок поставки на 40% за два квартала, перестроив планирование между площадками',
-            'Вывела складскую сеть на единый WMS — экономия 620 тыс. EUR в год',
-            'Вырастила команду с 8 до 25 человек, из них 4 менеджера',
-            'Удержала команду при реорганизации 2023 года: ушёл 1 человек из 25',
+            'Cut delivery lead time by 40% in two quarters by rebuilding planning across sites',
+            'Moved the warehouse network to a single WMS — saving EUR 620K a year',
+            'Grew the team from 8 to 25 people, including 4 managers',
+            'Kept the team through the 2023 reorganisation: 1 person out of 25 left',
           ], condensed: false,
         },
         {
           company: 'Baltic Logistics', role_title: 'Operations Manager',
           period_from: '2017-01', period_to: '2021-01',
-          context_line: 'Команда 8 человек',
+          context_line: 'Team of 8',
           bullets: [
-            'Запустила две площадки — плановый объём за 5 месяцев вместо 9',
-            'Снизила долю просроченных отгрузок с 12% до 3%',
+            'Launched two sites — planned volume in 5 months instead of 9',
+            'Reduced late shipments from 12% to 3%',
           ], condensed: false,
         },
       ],
       education: ['MSc Industrial Engineering, KTH, 2014'],
-      format_variant: 'nordic_nl' as const, language: 'sv',
+      format_variant: 'nordic_nl' as const, language: 'en',
       facts_used: ['f2', 'f3', 'f1', 'f4', 'f5', 'f6'],
     };
-    const checks = checkResume(doc, { language: 'ru', facts, profile, analysis: analyses[id] ?? null });
+    const checks = checkResume(doc, { language: 'en', facts, profile, analysis: analyses[id] ?? null });
     const rec: DocumentRecord = {
       id: 'd-' + id + '-r', kind: 'resume', version: 1, subject: null,
       body: JSON.stringify(doc), edited_by_user: false, format_variant: doc.format_variant,
@@ -368,27 +382,27 @@ export const mockApi: Api = {
     await delay(1900);
     const o = opportunities.find(x => x.id === id)!;
     const body = o.kind === 'hypothesis'
-      ? `В июле 2026 вы запустили вторую линию после пожара на основном заводе. По опыту такой запуск на квартал ломает планирование: производство выходит на объём раньше, чем под него перестроена отгрузка, и просрочка появляется там, где её никогда не было.
+      ? `In July 2026 you launched a second line after the fire at your main plant. In my experience a launch like that breaks planning for a quarter: production reaches volume before shipping is rebuilt around it, and late deliveries appear where there were none before.
 
-Я проходила такой переход в сети похожего размера. Сократила срок поставки на 40% за два квартала, перестроив планирование между площадками, и снизила долю просроченных отгрузок с 12% до 3%.
+I went through that kind of transition in a network of a similar size. I cut delivery lead time by 40% in two quarters by rebuilding planning across sites, and reduced late shipments from 12% to 3%.
 
-Роли под это у вас, насколько видно снаружи, пока нет. Возможно, она и не нужна. Но если вопрос уже обсуждается, предлагаю короткий разговор минут на двадцать на следующей неделе.
+As far as I can see from outside, there is no role for this at your company yet. Perhaps it isn't needed. But if the question is already on the table, would you be open to a short twenty-minute call next week?
 
-Ваш контакт я взяла со страницы руководства на сайте компании. Если такие письма вам не нужны, ответьте одним словом, и я больше не побеспокою.`
-      : `Вы объявили о расширении в Данию в июне 2026, и это ровно тот момент, когда операционка в трёх странах перестаёт складываться из трёх национальных операций. Я вела именно такую конфигурацию — Швеция, Дания, Финляндия — и сократила срок поставки на 40% за два квартала.
+I took your contact from the leadership page on the company website. If you'd rather not receive emails like this, reply with one word and I won't write again.`
+      : `You announced the expansion into Denmark in June 2026, and that is exactly the moment when operations in three countries stop being three national operations. I ran exactly that setup — Sweden, Denmark, Finland — and cut delivery lead time by 40% in two quarters.
 
-Что я приношу под ваши требования: единый WMS вместо трёх складских контуров с экономией 620 тыс. EUR в год; запуск двух площадок с выходом на плановый объём за 5 месяцев вместо 9; команда, выросшая с 8 до 25 человек, из них четыре менеджера.
+What I bring to your requirements: a single WMS instead of three warehouse set-ups, saving EUR 620K a year; two sites launched and at planned volume in 5 months instead of 9; a team that grew from 8 to 25 people, four of them managers.
 
-Про масштаб скажу прямо: в вашей вакансии 40+ человек, у меня было 25. Но эти 25 выросли из восьми под моим управлением, и четверо из них — руководители, то есть я управляю менеджерами, а не только специалистами. Разница между 25 и 40 здесь про темп найма, а не про тип работы.
+On scale, plainly: your posting mentions 40+ people, I had 25. But those 25 grew from eight under my management, and four of them are managers, so I manage managers, not only specialists. The difference between 25 and 40 here is about hiring pace, not the type of work.
 
-Почему Nordpakk и почему сейчас: датский рынок последней мили устроен иначе, чем шведский, и ошибка на старте стоит года. Мне интересно именно это окно, а не роль вообще.
+Why Nordpakk and why now: the Danish last-mile market works differently from the Swedish one, and a mistake at the start costs a year. It is this window that interests me, not the role in general.
 
-Предлагаю разговор на двадцать минут на неделе с 15 сентября.`;
-    const doc = { subject: o.kind === 'hypothesis' ? 'Отгрузка после запуска второй линии' : 'Операции в трёх странах — 20 минут?', body };
+Would you be open to a twenty-minute call in the week of 15 September?`;
+    const doc = { subject: o.kind === 'hypothesis' ? 'Shipping after the second line launch' : 'Operations in three countries — 20 minutes?', body };
     const checks = checkLetter(
-      { ...doc, word_count: 0, bridge_used: 'trajectory', facts_used: ['f2', 'f3', 'f1'], language: 'ru' },
+      { ...doc, word_count: 0, bridge_used: 'trajectory', facts_used: ['f2', 'f3', 'f1'], language: 'en' },
       o.kind,
-      { language: 'ru', facts, profile, analysis: analyses[id] ?? null,
+      { language: 'en', facts, profile, analysis: analyses[id] ?? null,
         opportunity: { company: o.company, signal: o.signal, jd_text: o.jd_text } },
     );
     const rec: DocumentRecord = {
@@ -414,18 +428,18 @@ export const mockApi: Api = {
     out.subject = patch.subject ?? out.subject;
     out.edited_by_user = true;
     out.checks = out.kind === 'letter'
-      ? checkLetter({ subject: out.subject ?? '', body: out.body, word_count: 0, bridge_used: null, facts_used: out.facts_used, language: 'ru' },
-        o.kind, { language: 'ru', facts, profile, analysis: analyses[oppId] ?? null,
+      ? checkLetter({ subject: out.subject ?? '', body: out.body, word_count: 0, bridge_used: null, facts_used: out.facts_used, language: 'en' },
+        o.kind, { language: 'en', facts, profile, analysis: analyses[oppId] ?? null,
           opportunity: { company: o.company, signal: o.signal, jd_text: o.jd_text } })
-      : checkResume(JSON.parse(out.body), { language: 'ru', facts, profile, analysis: analyses[oppId] ?? null });
+      : checkResume(JSON.parse(out.body), { language: 'en', facts, profile, analysis: analyses[oppId] ?? null });
     return { checks: out.checks };
   },
 
-  async runSearch(onEvent) {
+  async runSearch(mode, onEvent) {
     // Имитируем ровно ту же последовательность событий, что присылает воркер,
     // с правдоподобными задержками: полосу прогресса надо проверять на том же
     // потоке, который будет в проде, а не на мгновенном результате.
-    const anglesTotal = 4;
+    const anglesTotal = mode === 'vacancies' ? 2 : 4;
     const estimateSec = estimateRunSeconds(anglesTotal, 3);
     onEvent({ stage: 'plan', anglesTotal, estimateSec });
     await delay(500);

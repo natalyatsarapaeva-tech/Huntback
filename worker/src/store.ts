@@ -148,7 +148,8 @@ const toOpportunity = (r: Record<string, unknown>): Opportunity => ({
   salary_hint: r.salary_hint as string | null,
   contact_name: r.contact_name as string | null, contact_title: r.contact_title as string | null,
   contact_email: r.contact_email as string | null, contact_linkedin: r.contact_linkedin as string | null,
-  user_note: r.user_note as string | null, updated_at: String(r.updated_at),
+  user_note: r.user_note as string | null, label: (r.label as Opportunity['label']) ?? null,
+  updated_at: String(r.updated_at),
 });
 
 export async function listOpportunities(
@@ -189,7 +190,7 @@ export async function createOpportunity(
 }
 
 const PATCHABLE = ['status', 'user_note', 'contact_name', 'contact_title', 'contact_email',
-  'contact_linkedin', 'channel', 'referral_name', 'score', 'hard_blocker', 'kind', 'jd_text'] as const;
+  'contact_linkedin', 'channel', 'referral_name', 'score', 'hard_blocker', 'kind', 'jd_text', 'label'] as const;
 
 export async function patchOpportunity(
   env: Env, userId: string, id: string, patch: Record<string, unknown>,

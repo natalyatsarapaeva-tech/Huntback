@@ -20,10 +20,10 @@ export interface RunStage {
 export type RunStageId = 'plan' | 'search' | 'dedup' | 'save' | 'done';
 
 export const RUN_STAGES: RunStage[] = [
-  { id: 'plan', label: 'Формирую поисковые запросы', weight: 0.04 },
-  { id: 'search', label: 'Ищу вакансии и компании с сигналами', weight: 0.86 },
-  { id: 'dedup', label: 'Проверяю на дубли', weight: 0.06 },
-  { id: 'save', label: 'Сохраняю найденное', weight: 0.04 },
+  { id: 'plan', label: 'Building search queries', weight: 0.04 },
+  { id: 'search', label: 'Searching for vacancies and companies with signals', weight: 0.86 },
+  { id: 'dedup', label: 'Checking for duplicates', weight: 0.06 },
+  { id: 'save', label: 'Saving results', weight: 0.04 },
 ];
 
 /** Сколько примерно занимает один поисковый запрос с веб-поиском, секунд. */
@@ -91,7 +91,7 @@ export function runProgress(input: ProgressInput): RunProgress {
 
   if (stage === 'done') {
     return {
-      stage, label: 'Готово', fraction: 1, percent: 100,
+      stage, label: 'Done', fraction: 1, percent: 100,
       elapsedSec, estimateSec, remainingSec: 0, detail: null,
     };
   }
@@ -104,7 +104,7 @@ export function runProgress(input: ProgressInput): RunProgress {
   if (stage === 'search' && anglesTotal > 0) {
     // Настоящий прогресс: доля завершённых направлений.
     within = Math.min(1, anglesDone / anglesTotal);
-    detail = `${anglesDone} из ${anglesTotal} направлений`;
+    detail = `${anglesDone} of ${anglesTotal} search directions`;
     // Внутри незавершённого направления даём полосе доползти до его границы по
     // времени, но НЕ дальше: обгонять реальный факт она не имеет права.
     if (anglesDone < anglesTotal && estimateSec > 0) {
@@ -121,7 +121,7 @@ export function runProgress(input: ProgressInput): RunProgress {
   const remaining = Math.max(0, Math.round(estimateSec * (1 - fraction)));
   return {
     stage,
-    label: RUN_STAGES.find(s => s.id === stage)?.label ?? 'Работаю',
+    label: RUN_STAGES.find(s => s.id === stage)?.label ?? 'Working',
     fraction,
     percent: Math.round(fraction * 100),
     elapsedSec,
@@ -134,11 +134,11 @@ export function runProgress(input: ProgressInput): RunProgress {
 /** «около 2 минут», «около 40 секунд» — для подписи рядом с полосой. */
 export function humanDuration(sec: number): string {
   const s = Math.max(0, Math.round(sec));
-  if (s < 45) return `около ${Math.max(5, Math.round(s / 5) * 5)} секунд`;
+  if (s < 45) return `about ${Math.max(5, Math.round(s / 5) * 5)} seconds`;
   const min = Math.round(s / 60);
-  if (min <= 1) return 'около минуты';
-  if (min < 5) return `около ${min} минут`;
-  return `около ${Math.round(min)} минут`;
+  if (min <= 1) return 'about a minute';
+  if (min < 5) return `about ${min} minutes`;
+  return `about ${Math.round(min)} minutes`;
 }
 
 /** Событие, которое воркер стримит клиенту по ходу прогона. */
@@ -179,28 +179,28 @@ export interface AngleOutcome {
  */
 export function describeAngleOutcomes(outcomes: AngleOutcome[]): string[] {
   return outcomes.map(o => {
-    const pass = o.pass === 'vacancies' ? ' · вакансии' : o.pass === 'signals' ? ' · сигналы' : '';
-    const name = `«${o.angle.length > 60 ? o.angle.slice(0, 60) + '…' : o.angle}»${pass}`;
+    const pass = o.pass === 'vacancies' ? ' · vacancies' : o.pass === 'signals' ? ' · signals' : '';
+    const name = `“${o.angle.length > 60 ? o.angle.slice(0, 60) + '…' : o.angle}”${pass}`;
     return `${name}: ${outcomeText(o)}${traceText(o)}`;
   });
 }
 
 function outcomeText(o: AngleOutcome): string {
-  if (o.error) return `ошибка — ${o.error}`;
-  if (!o.returned) return 'модель не нашла ни одного места';
+  if (o.error) return `error — ${o.error}`;
+  if (!o.returned) return 'the model found no places';
   const split = o.vacancies != null && o.hypotheses != null
-    ? ` (вакансий ${o.vacancies}, гипотез ${o.hypotheses})` : '';
+    ? ` (vacancies ${o.vacancies}, hypotheses ${o.hypotheses})` : '';
   const dropped = o.returned - o.kept;
-  if (!dropped) return `найдено ${o.kept}${split}`;
-  return `модель вернула ${o.returned}, отброшено ${dropped} `
-    + `(гипотеза без датированного сигнала и ссылки или без компании и роли)${split}`;
+  if (!dropped) return `found ${o.kept}${split}`;
+  return `the model returned ${o.returned}, dropped ${dropped} `
+    + `(hypothesis without a dated signal and link, or without company and role)${split}`;
 }
 
 function traceText(o: AngleOutcome): string {
   const parts: string[] = [];
-  if (o.queries?.length) parts.push(`запросы: ${o.queries.slice(0, 4).map(q => `«${q}»`).join(', ')}`);
-  if (o.domains?.length) parts.push(`источники: ${o.domains.slice(0, 6).join(', ')}`);
-  else if (o.queries) parts.push('источников нет');
+  if (o.queries?.length) parts.push(`queries: ${o.queries.slice(0, 4).map(q => `“${q}”`).join(', ')}`);
+  if (o.domains?.length) parts.push(`sources: ${o.domains.slice(0, 6).join(', ')}`);
+  else if (o.queries) parts.push('no sources');
   return parts.length ? `. ${parts.join('; ')}` : '';
 }
 

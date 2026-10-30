@@ -56,7 +56,7 @@ export function checkStoplist(text: string, ctx: CheckContext): CheckResult[] {
   return hits.map(h => ({
     rule: 'stoplist',
     level: level as CheckResult['level'],
-    message: `Фраза из стоп-листа: «${h.phrase}»`,
+    message: `Stop-list phrase: “${h.phrase}”`,
     locator: { kind: 'offset' as const, value: h.at },
   }));
 }
@@ -68,9 +68,9 @@ export function checkSingleSource(factsUsed: string[] | undefined, ctx: CheckCon
   for (const id of factsUsed || []) {
     const f = bank.get(id);
     if (!f) {
-      out.push({ rule: 'single_source', level: 'block', message: `Факт ${id} не найден в банке фактов` });
+      out.push({ rule: 'single_source', level: 'block', message: `Fact ${id} is not in the fact bank` });
     } else if (!f.confirmed) {
-      out.push({ rule: 'single_source', level: 'block', message: `Факт «${f.action}» не подтверждён пользователем` });
+      out.push({ rule: 'single_source', level: 'block', message: `Fact “${f.action}” is not confirmed by the user` });
     }
   }
   return out;
@@ -79,11 +79,11 @@ export function checkSingleSource(factsUsed: string[] | undefined, ctx: CheckCon
 function checkSpelling(text: string, ctx: CheckContext): CheckResult[] {
   const lang = ctx.language ?? 'en';
   if (!ctx.spellcheck) {
-    return [ok('spelling', 'Орфография не проверена: словарь не подключён')];
+    return [ok('spelling', 'Spelling not checked: no dictionary connected')];
   }
   const bad = ctx.spellcheck(text, lang) || [];
   return bad.length
-    ? [{ rule: 'spelling', level: 'warn', message: `Возможные опечатки: ${bad.slice(0, 8).join(', ')}` }]
+    ? [{ rule: 'spelling', level: 'warn', message: `Possible typos: ${bad.slice(0, 8).join(', ')}` }]
     : [];
 }
 
@@ -122,7 +122,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
     if (share < th.quantifiedShare) {
       out.push({
         rule: 'quantification', level: 'warn',
-        message: `Буллитов с числом ${Math.round(share * 100)}% — норма от ${Math.round(th.quantifiedShare * 100)}%`,
+        message: `${Math.round(share * 100)}% of bullets have a number — expected ${Math.round(th.quantifiedShare * 100)}%+`,
       });
     }
     // …и не меньше N на роль последних лет.
@@ -135,7 +135,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
       if (n < th.quantifiedPerRole) {
         out.push({
           rule: 'quantification_per_role', level: 'warn',
-          message: `${r.company} · ${r.role_title}: буллитов с числом ${n}, нужно ${th.quantifiedPerRole}`,
+          message: `${r.company} · ${r.role_title}: ${n} bullets with a number, needs ${th.quantifiedPerRole}`,
         });
       }
     }
@@ -144,7 +144,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
       if (!hasNumber(bullets[i]) && !hasNumber(bullets[i - 1])) {
         out.push({
           rule: 'bullets_without_number_adjacent', level: 'info',
-          message: 'Два буллита без числа подряд',
+          message: 'Two bullets in a row without a number',
           locator: { kind: 'bullet', value: i },
         });
         break;
@@ -164,7 +164,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
     if (covered === 0) {
       out.push({
         rule: 'top_third', level: 'warn',
-        message: `Первые ${th.topBullets} буллита не закрывают ни одного ожидания веса must`,
+        message: `The first ${th.topBullets} bullets do not cover any must-have expectation`,
         locator: { kind: 'bullet', value: 0 },
       });
     }
@@ -174,20 +174,20 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
   const summary = doc.summary || [];
   if (summary.length) {
     if (summary.length > 3) {
-      out.push({ rule: 'summary_length', level: 'warn', message: 'Саммари длиннее трёх строк' });
+      out.push({ rule: 'summary_length', level: 'warn', message: 'Summary is longer than three lines' });
     }
     const support = doc.summary_support;
     if (!support || support.length !== summary.length) {
       out.push({
         rule: 'summary_supported', level: 'warn',
-        message: 'Модель не разметила, какой буллит подтверждает каждое утверждение саммари',
+        message: 'The model did not mark which bullet supports each summary claim',
       });
     } else {
       support.forEach((idx, i) => {
         if (idx == null || idx < 0 || idx >= bullets.length) {
           out.push({
             rule: 'summary_supported', level: 'warn',
-            message: `Утверждение саммари не подтверждено буллитом: «${summary[i].slice(0, 60)}…»`,
+            message: `Summary claim not supported by a bullet: “${summary[i].slice(0, 60)}…”`,
             locator: { kind: 'paragraph', value: i },
           });
         }
@@ -200,12 +200,12 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
   if (p) {
     const line = normalize(doc.facts_line || '');
     const missing: string[] = [];
-    if ((p.work_auth || []).length && !/work|author|permit|виз|прав|tillst/.test(line)) missing.push('право на работу');
-    if ((p.languages || []).length && !(p.languages || []).some(l => line.includes(normalize(l.lang)))) missing.push('языки по CEFR');
-    if (p.relocation && p.relocation.ready !== 'no' && !/reloc|переезд|релок|flytt/.test(line)) missing.push('готовность к релокации');
+    if ((p.work_auth || []).length && !/work|author|permit|виз|прав|tillst/.test(line)) missing.push('work authorization');
+    if ((p.languages || []).length && !(p.languages || []).some(l => line.includes(normalize(l.lang)))) missing.push('CEFR languages');
+    if (p.relocation && p.relocation.ready !== 'no' && !/reloc|переезд|релок|flytt/.test(line)) missing.push('relocation readiness');
     if (p.linkedin_url && !line.includes('linkedin')) missing.push('LinkedIn');
     if (missing.length) {
-      out.push({ rule: 'facts_line', level: 'info', message: `В строке фактов не хватает: ${missing.join(', ')}` });
+      out.push({ rule: 'facts_line', level: 'info', message: `The facts line is missing: ${missing.join(', ')}` });
     }
   }
 
@@ -214,19 +214,19 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
   for (const c of doc.competencies || []) {
     for (const b of banned) {
       if (containsPhrase(c, b)) {
-        out.push({ rule: 'competencies', level: 'warn', message: `В компетенциях слово «${b}» — покажите это результатом в буллите` });
+        out.push({ rule: 'competencies', level: 'warn', message: `Competencies contain “${b}” — show it as a result in a bullet instead` });
       }
     }
   }
   if ((doc.competencies || []).length && ((doc.competencies || []).length < 6 || (doc.competencies || []).length > 10)) {
-    out.push({ rule: 'competencies_count', level: 'info', message: 'Компетенций должно быть 6–10' });
+    out.push({ rule: 'competencies_count', level: 'info', message: 'There should be 6–10 competencies' });
   }
 
   // Длина: оценка по знакам на страницу.
   const chars = text.length;
   const pages = Math.max(1, Math.ceil(chars / th.charsPerPage));
   if (pages > th.maxResumePages) {
-    out.push({ rule: 'length', level: 'warn', message: `Оценка объёма — ${pages} страницы, норма до ${th.maxResumePages}` });
+    out.push({ rule: 'length', level: 'warn', message: `Estimated length is ${pages} pages, the limit is ${th.maxResumePages}` });
   }
 
   // Персональные данные вне de_at (§10.5).
@@ -235,7 +235,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
     // срабатывает вовсе. Границу задаём явно через Unicode-свойство буквы.
     const PERSONAL = /(?<!\p{L})(дата рождения|date of birth|born on|födelsedatum|marital status|семейное положение|гражданство|nationality)(?!\p{L})/iu;
     if (PERSONAL.test(text)) {
-      out.push({ rule: 'personal_data', level: 'block', message: `Персональные данные недопустимы в формате ${doc.format_variant}` });
+      out.push({ rule: 'personal_data', level: 'block', message: `Personal data is not allowed in the ${doc.format_variant} format` });
     }
   }
 
@@ -260,7 +260,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
   if (wc < lo || wc > hi) {
     out.push({
       rule: 'length', level: 'warn',
-      message: `${wc} слов — ветка «${kind === 'vacancy' ? 'сопроводительное' : 'холодное'}» требует ${lo}–${hi}`,
+      message: `${wc} words — a ${kind === 'vacancy' ? 'cover' : 'cold'} letter needs ${lo}–${hi}`,
     });
   }
 
@@ -270,7 +270,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
     if (normalize(first).startsWith(normalize(bad))) {
       out.push({
         rule: 'banned_opening', level: 'warn',
-        message: `Шаблонное начало: «${bad}»`,
+        message: `Clichéd opening: “${bad}”`,
         locator: { kind: 'paragraph', value: 0 },
       });
       break;
@@ -291,7 +291,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
     // Год в пределах живой памяти — почти всегда дата сигнала; всё равно требуем источник.
     out.push({
       rule: 'number_consistency', level: 'block',
-      message: `Число ${n} есть в письме, но его нет ни в резюме под это место, ни в банке фактов, ни в сигнале`,
+      message: `The number ${n} is in the letter but not in the tailored resume, the fact bank or the signal`,
     });
   }
 
@@ -319,7 +319,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
       if (!known.includes(normalize(ent))) {
         out.push({
           rule: 'company_facts', level: 'warn',
-          message: `«${ent}» не встречается ни в сигнале и вакансии, ни в вашем профиле — проверьте, откуда это`,
+          message: `“${ent}” appears neither in the signal and job posting nor in your profile — check where it came from`,
         });
       }
     }
@@ -346,8 +346,8 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
     out.push({
       rule: 'single_ask', level: 'info',
       message: asks.length === 0
-        ? 'В письме нет ни одной просьбы — закрывать нужно одной конкретной'
-        : `Просьб в письме: ${asks.length}, нужна одна`,
+        ? 'The letter has no ask — close with one specific request'
+        : `The letter has ${asks.length} asks, it needs one`,
       locator: { kind: 'paragraph', value: asks[0]?.para ?? Math.max(0, paras.length - 1) },
     });
   }
@@ -359,7 +359,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
       if (containsPhrase(body, kw)) {
         out.push({
           rule: 'blocker_mentioned', level: 'warn',
-          message: `Письмо касается неснятого блокера (${b.kind}): «${kw}»`,
+          message: `The letter touches an unresolved blocker (${b.kind}): “${kw}”`,
         });
         break;
       }
@@ -433,11 +433,11 @@ export function applySwapResult(res: SwapResult, cfg: HuntbackConfig = DEFAULT_C
   if (n < cfg.thresholds.swapMinBroken) {
     out.push({
       rule: 'swap_test', level: 'block',
-      message: `Swap-тест: при подмене компании ломается ${n} предложений из ${cfg.thresholds.swapMinBroken} — письмо шаблонное`,
+      message: `Swap test: swapping the company breaks ${n} of the required ${cfg.thresholds.swapMinBroken} sentences — the letter is generic`,
     });
   }
   for (const g of res.generic || []) {
-    out.push({ rule: 'swap_generic', level: 'info', message: `Похоже на написанное без знания компании: «${g}»` });
+    out.push({ rule: 'swap_generic', level: 'info', message: `Reads as written without knowing the company: “${g}”` });
   }
   return out;
 }
