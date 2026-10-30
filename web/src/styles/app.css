@@ -353,3 +353,7 @@ table.t td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .back-to-list { display: none; }
 @media (max-width: 900px) { .back-to-list { display: inline-flex; } }
+
+/* Выход: в шапке всегда, в том числе на телефоне, где прячется всё остальное справа. */
+.header-logout { flex: none; min-height: 44px; }
+@media (max-width: 720px) { .header-logout { margin-left: auto; } }

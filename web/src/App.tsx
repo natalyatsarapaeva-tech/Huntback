@@ -23,6 +23,8 @@ import { Usage } from './screens/Usage.tsx';
 
 type Tab = 'places' | 'profile' | 'usage';
 const BUSY_TIMEOUT_MS = 180_000;
+/** Сколько разборов идёт одновременно при массовой проверке совпадения. */
+const BULK_CONCURRENCY = 3;
 
 /** Сборка без серверной части: витрина интерфейса на статическом хостинге. */
 const DEMO_ONLY = import.meta.env.VITE_DEMO_ONLY === '1';
@@ -142,6 +144,46 @@ export function App() {
     setFacts(p.facts); setAudit(p.audit);
   };
 
+  const logout = async () => {
+    try { await api.logout(); } catch { /* сессия и так могла истечь — выходим в любом случае */ }
+    setApi(null); setMe(null); setProfile(null); setFacts([]); setAudit(null);
+    setList([]); setDetail(null); setSelected(null); setUsage(null);
+    setTab('places'); setOnboarding(false); setStatus({ kind: 'idle' });
+  };
+
+  /**
+   * Массовая проверка совпадения: разбор каждого места пулом по несколько
+   * штук. Неудача одного места не останавливает остальные; исчерпанный бюджет
+   * останавливает всё — дальше каждый вызов упадёт так же.
+   */
+  const bulkAnalyse = async (ids: string[]) => {
+    const total = ids.length;
+    let done = 0, failed = 0, stopped = false, lastError = '';
+    const show = () => setStatus({ kind: 'busy', text: `Checking match: ${done} of ${total}${failed ? ` · ${failed} failed` : ''}` });
+    show();
+    const queue = [...ids];
+    const worker = async () => {
+      for (let id = queue.shift(); id && !stopped; id = queue.shift()) {
+        try {
+          await api.analyse(id);
+        } catch (e) {
+          failed++;
+          lastError = e instanceof Error ? e.message : String(e);
+          if (e instanceof ApiFailure && e.code === 'budget_exceeded') stopped = true;
+        }
+        done++;
+        show();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BULK_CONCURRENCY, total) }, worker));
+    await refreshList(api);
+    if (selected && ids.includes(selected)) setDetail(await api.getOpportunity(selected));
+    const ok = done - failed;
+    setStatus(failed
+      ? { kind: 'error', text: `Match checked for ${ok} of ${total}. ${failed} failed${stopped ? ', stopped' : ''}: ${lastError}` }
+      : { kind: 'ok', text: `Match checked for ${ok} place${ok === 1 ? '' : 's'} — sorted by match` });
+  };
+
   const changeSearchMode = (m: SearchMode) => {
     setSearchMode(m);
     try { localStorage.setItem(SEARCH_MODE_KEY, m); } catch { /* приватный режим — просто не запомним */ }
@@ -156,7 +198,7 @@ export function App() {
   if (onboarding) {
     return (
       <div className="shell">
-        <Header me={me} tab={tab} onTab={setTab} minimal />
+        <Header me={me} tab={tab} onTab={setTab} onLogout={logout} minimal />
         <StatusBar status={status} elapsed={elapsed} onDismiss={() => setStatus({ kind: 'idle' })} />
         <Onboarding
           profile={profile} facts={facts} audit={audit} busy={busy}
@@ -227,7 +269,7 @@ export function App() {
 
   return (
     <div className="shell">
-      <Header me={me} tab={tab} onTab={setTab} spent={usage?.spent} limit={usage?.limit} />
+      <Header me={me} tab={tab} onTab={setTab} onLogout={logout} spent={usage?.spent} limit={usage?.limit} />
       <StatusBar status={status} elapsed={elapsed} onDismiss={() => setStatus({ kind: 'idle' })} />
       <main className={`main ${tab === 'profile' ? 'main--narrow' : ''}`}>
         {tab === 'places' && (
@@ -236,6 +278,7 @@ export function App() {
             searchMode={searchMode} onSearchMode={changeSearchMode}
             onSelect={setSelected}
             onRun={startRun}
+            onBulkAnalyse={bulkAnalyse}
             onAnalyse={async id => {
               const r = await run('Analysing the place’s expectations', () => api.analyse(id),
                 x => `Analysed: ${x.coverage.closed} of ${x.coverage.total} expectations covered, match ${x.analysis.score}%`);
@@ -262,7 +305,7 @@ export function App() {
             }}
             onPatch={async (id, patch) => {
               const r = await api.patchOpportunity(id, patch);
-              if (r.analysis) setDetail(d => (d ? { ...d, analysis: r.analysis! } : d));
+              if (r.analysis) setDetail(d => (d ? { ...d, analysis: r.analysis!, opportunity: { ...d.opportunity, ...patch } } : d));
               else setDetail(await api.getOpportunity(id));
               await refreshList(api);
             }}
@@ -292,8 +335,8 @@ export function App() {
   );
 }
 
-function Header({ me, tab, onTab, spent, limit, minimal }: {
-  me: Me; tab: Tab; onTab: (t: Tab) => void;
+function Header({ me, tab, onTab, onLogout, spent, limit, minimal }: {
+  me: Me; tab: Tab; onTab: (t: Tab) => void; onLogout: () => void;
   spent?: number; limit?: number; minimal?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
@@ -320,6 +363,7 @@ function Header({ me, tab, onTab, spent, limit, minimal }: {
           )}
           <span className="chip chip-user">{me.user.name || me.user.email}</span>
         </div>
+        <button className="btn btn-ghost btn-sm header-logout" onClick={onLogout}>Log out</button>
       </div>
     </header>
   );

@@ -82,6 +82,7 @@ async function streamNdjson(path: string, payload: unknown, onEvent: (e: RunEven
 
 export const httpApi: Api = {
   me: () => call('/me'),
+  logout: () => post('/auth/logout'),
   getProfile: () => call('/profile'),
   saveProfile: patch => call('/profile', { method: 'PUT', body: JSON.stringify(patch) }),
   runAudit: () => post('/profile/audit'),

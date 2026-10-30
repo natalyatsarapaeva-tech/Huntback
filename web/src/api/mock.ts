@@ -127,6 +127,7 @@ let opportunities: Opportunity[] = [
     source_url: 'https://example.com/news/snabbud-series-c',
     source_date: '2026-05-22',
     signal: 'Series C round in May 2026, entry into three new markets announced',
+    label: 'low_chance',
   }),
   opp({
     id: 'o5', company: 'Matkassen', role_title: 'VP Supply Chain', industry: 'online groceries',
@@ -211,6 +212,10 @@ export const mockApi: Api = {
       spreadsheet_url: 'https://docs.google.com/spreadsheets/d/demo',
       reauth_required: false,
     };
+  },
+
+  async logout() {
+    await delay(80);
   },
 
   async getProfile() {

@@ -9,7 +9,8 @@
 import {
   checkBudget, checkRunLimit, findDuplicate, reanalyseAfterProfileChange,
   computeScore, coverage, auditProfile, checkResume, checkLetter,
-  estimateRunSeconds, describeAngleOutcomes, type RunEvent, type Demand, type Opportunity,
+  estimateRunSeconds, describeAngleOutcomes, OPPORTUNITY_LABELS,
+  type RunEvent, type Demand, type Opportunity, type OpportunityLabel,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
 import { authStart, authCallback, logout, requireSession } from './auth.ts';
@@ -213,7 +214,12 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     }
     if (!action && m === 'PATCH') {
       const patch = await body<Record<string, unknown>>(request);
+      if ('label' in patch && patch.label !== null && !OPPORTUNITY_LABELS.includes(patch.label as OpportunityLabel)) {
+        throw new ApiError('bad_request', 'Unknown label', 400);
+      }
       await db.patchOpportunity(env, userId, id, patch);
+      // Пометка не меняет требований места — пересчитывать разбор незачем.
+      if (Object.keys(patch).every(k => k === 'label')) return json({ ok: true });
       // Снятие блокера пересчитывает разбор БЕЗ вызова модели (§8.3, критерий 5b).
       const stored = await db.getAnalysis(env, userId, id);
       if (stored) {

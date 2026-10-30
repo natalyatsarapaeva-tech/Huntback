@@ -2,7 +2,9 @@
 // страницы с переходом «назад к списку», а не две сжатые колонки.
 
 import { useEffect, useState } from 'react';
-import type { Opportunity, OpportunityDetail, CheckResult, ImportResult, SearchMode } from '../api/types.ts';
+import type {
+  Opportunity, OpportunityDetail, CheckResult, ImportResult, SearchMode, OpportunityLabel,
+} from '../api/types.ts';
 import { hasUnresolvedBlocker, type Expectation, type BlockerVerdict } from '@huntback/core';
 import { Score, Meter, Chip, KindChip, Checks, Card, Field, Empty } from '../components/ui.tsx';
 
@@ -27,6 +29,24 @@ const BLOCKER_LABEL: Record<string, string> = {
 };
 
 type KindFilter = 'all' | 'hypothesis' | 'vacancy';
+/** active — без пометок; labelled — только помеченные, чтобы их можно было вернуть. */
+type LabelFilter = 'active' | 'all' | 'labelled';
+type SortOrder = 'recent' | 'match';
+
+export const LABEL_TEXT: Record<OpportunityLabel, string> = {
+  uninteresting: 'Not interesting',
+  low_chance: 'Low chance',
+  applied: 'Already applied',
+};
+
+/** Не разобранное место — кандидат для массовой проверки совпадения. */
+const needsMatch = (o: Opportunity) => o.score == null;
+
+/** По совпадению сверху вниз; неразобранные — в конце, в прежнем порядке. */
+function sortPlaces(list: Opportunity[], order: SortOrder): Opportunity[] {
+  if (order === 'recent') return list;
+  return [...list].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+}
 
 const FILTERS: { id: KindFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -41,10 +61,10 @@ function toCsv(list: Opportunity[]): string {
     return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
   const rows = [
-    ['Employer', 'Role', 'Type', 'Match %', 'Link'],
-    ...list.map(o => [o.company, o.role_title, o.kind, o.score ?? '', o.source_url ?? '']),
+    ['Employer', 'Role', 'Type', 'Match %', 'Label', 'Link'],
+    ...list.map(o => [o.company, o.role_title, o.kind, o.score ?? '', o.label ? LABEL_TEXT[o.label] : '', o.source_url ?? '']),
   ];
-  return '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n');
+  return '\uFEFF' + rows.map(r => r.map(cell).join(',')).join('\r\n');
 }
 
 function downloadCsv(list: Opportunity[]): void {
@@ -61,7 +81,7 @@ function downloadCsv(list: Opportunity[]): void {
 
 export function Places({
   list, detail, selectedId, busy, searchMode, onSearchMode, onSelect, onAnalyse, onResume, onLetter,
-  onArchive, onPatch, onFetchJobText, onImport, onConfirmImport, onGoToProfile, onRun,
+  onArchive, onPatch, onFetchJobText, onImport, onConfirmImport, onGoToProfile, onRun, onBulkAnalyse,
 }: {
   list: Opportunity[];
   detail: OpportunityDetail | null;
@@ -80,11 +100,29 @@ export function Places({
   onConfirmImport: (r: ImportResult) => void;
   onGoToProfile: () => void;
   onRun: () => void;
+  onBulkAnalyse: (ids: string[]) => Promise<void>;
 }) {
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState<KindFilter>('all');
-  const shown = filter === 'all' ? list : list.filter(o => o.kind === filter);
-  const count = (k: KindFilter) => (k === 'all' ? list.length : list.filter(o => o.kind === k).length);
+  const [labelFilter, setLabelFilter] = useState<LabelFilter>('active');
+  const [sort, setSort] = useState<SortOrder>('recent');
+
+  const byLabel = list.filter(o => (labelFilter === 'all' ? true : labelFilter === 'active' ? !o.label : !!o.label));
+  const count = (k: KindFilter) => (k === 'all' ? byLabel.length : byLabel.filter(o => o.kind === k).length);
+  const shown = sortPlaces(filter === 'all' ? byLabel : byLabel.filter(o => o.kind === filter), sort);
+  const labelled = list.filter(o => !!o.label).length;
+  // Массовая проверка — только по тому, что сейчас видно и ещё не разобрано.
+  const toCheck = shown.filter(o => !o.label && needsMatch(o));
+
+  const checkAll = async () => {
+    if (!toCheck.length) return;
+    const one = toCheck.length === 1;
+    const what = filter === 'vacancy' ? (one ? 'vacancy' : 'vacancies')
+      : filter === 'hypothesis' ? (one ? 'hypothesis' : 'hypotheses') : (one ? 'place' : 'places');
+    if (!confirm(`Check the match for ${toCheck.length} new ${what}? Each one is a separate analysis and is billed to your monthly budget.`)) return;
+    await onBulkAnalyse(toCheck.map(o => o.id));
+    setSort('match');
+  };
 
   return (
     <div className="stack gap-16">
@@ -92,7 +130,7 @@ export function Places({
         <div>
           <h1>Places</h1>
           <p className="muted small mt-8">
-            {list.length} in progress · {count('vacancy')} vacancies · {count('hypothesis')} hypotheses
+            {list.length - labelled} active · {labelled} labelled · {list.filter(o => !o.label && o.kind === 'vacancy').length} active vacancies
           </p>
         </div>
         <div className="flex gap-8 wrap items-center">
@@ -128,21 +166,44 @@ export function Places({
       )}
 
       {!!list.length && (
-        <div className="flex gap-8 wrap" role="tablist" aria-label="Filter by type">
-          {FILTERS.map(f => (
-            <button key={f.id} role="tab" aria-selected={filter === f.id}
-              className={`btn btn-sm ${filter === f.id ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setFilter(f.id)}>
-              {f.label} · {count(f.id)}
+        <div className="flex gap-8 wrap items-center between">
+          <div className="flex gap-8 wrap" role="tablist" aria-label="Filter by type">
+            {FILTERS.map(f => (
+              <button key={f.id} role="tab" aria-selected={filter === f.id}
+                className={`btn btn-sm ${filter === f.id ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setFilter(f.id)}>
+                {f.label} · {count(f.id)}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-8 wrap items-center">
+            <select className="select" style={{ width: 'auto' }} value={labelFilter} aria-label="Which places to show"
+              onChange={e => setLabelFilter(e.target.value as LabelFilter)}>
+              <option value="active">Active only</option>
+              <option value="all">Include labelled</option>
+              <option value="labelled">Labelled only</option>
+            </select>
+            <select className="select" style={{ width: 'auto' }} value={sort} aria-label="Sort"
+              onChange={e => setSort(e.target.value as SortOrder)}>
+              <option value="recent">Most recent</option>
+              <option value="match">Best match first</option>
+            </select>
+            <button className="btn btn-secondary btn-sm" onClick={checkAll} disabled={busy || !toCheck.length}
+              title="Analyse every shown place that has no match score yet">
+              Check match{toCheck.length ? ` · ${toCheck.length} new` : ''}
             </button>
-          ))}
+          </div>
         </div>
       )}
 
       {!!list.length && (
         <div className="places" data-view={selectedId ? 'detail' : 'list'}>
           <div className="place-list">
-            {!shown.length && <p className="small muted" style={{ padding: 12 }}>Nothing of this type yet.</p>}
+            {!shown.length && (
+              <p className="small muted" style={{ padding: 12 }}>
+                {labelFilter === 'labelled' ? 'No labelled places.' : 'Nothing here with these filters.'}
+              </p>
+            )}
             {shown.map(o => (
               <button key={o.id} className="place" aria-selected={o.id === selectedId}
                 onClick={() => onSelect(o.id)}>
@@ -153,6 +214,7 @@ export function Places({
                 <div className="place-meta">
                   <KindChip kind={o.kind} />
                   {o.city && <Chip>{o.city}</Chip>}
+                  {o.label && <Chip tone="mid">{LABEL_TEXT[o.label]}</Chip>}
                   {o.score != null && <Score value={o.score} size="sm" />}
                 </div>
               </button>
@@ -287,6 +349,17 @@ function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, on
               {(o.city || o.country) && <Chip>{[o.city, o.country].filter(Boolean).join(', ')}</Chip>}
               {o.size && <Chip>{o.size}</Chip>}
               {o.source_url && <a className="chip chip-btn" href={o.source_url} target="_blank" rel="noreferrer">source ↗</a>}
+            </div>
+            <div className="flex gap-8 items-center wrap mt-12">
+              <label className="small muted" htmlFor={`label-${o.id}`}>Label</label>
+              <select id={`label-${o.id}`} className="select" style={{ width: 'auto' }} value={o.label ?? ''}
+                onChange={e => onPatch(o.id, { label: e.target.value || null })}>
+                <option value="">Active — no label</option>
+                {(Object.keys(LABEL_TEXT) as OpportunityLabel[]).map(k => (
+                  <option key={k} value={k}>{LABEL_TEXT[k]}</option>
+                ))}
+              </select>
+              {o.label && <span className="small muted">Hidden from the active list</span>}
             </div>
           </div>
           {a && (

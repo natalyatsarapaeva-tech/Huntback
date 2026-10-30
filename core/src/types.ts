@@ -76,6 +76,9 @@ export type OpportunityOrigin = 'discovered' | 'manual_url' | 'manual_text' | 's
 export type OpportunityStatus =
   | 'new' | 'analysed' | 'drafted' | 'sent' | 'replied' | 'interview' | 'rejected' | 'archived';
 export type Channel = 'cold' | 'warm' | 'referral';
+/** Пометка пользователя. Помеченное место выпадает из активного списка. */
+export type OpportunityLabel = 'uninteresting' | 'low_chance' | 'applied';
+export const OPPORTUNITY_LABELS: OpportunityLabel[] = ['uninteresting', 'low_chance', 'applied'];
 
 export interface Opportunity {
   id: string;
@@ -103,6 +106,7 @@ export interface Opportunity {
   contact_email?: string | null;
   contact_linkedin?: string | null;
   user_note?: string | null;
+  label?: OpportunityLabel | null;
   updated_at: string;
 }
 

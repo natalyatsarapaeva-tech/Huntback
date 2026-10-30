@@ -1,11 +1,11 @@
 import type {
   Profile, Fact, Opportunity, Analysis, CheckResult, AuditReport, BudgetStatus, Coverage,
-  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent,
+  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent, OpportunityLabel,
 } from '@huntback/core';
 
 export type {
   Profile, Fact, Opportunity, Analysis, CheckResult, AuditReport, BudgetStatus, Coverage,
-  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent,
+  LanguageLevel, WorkAuth, Scale, CareerGap, Cefr, Expectation, Blocker, RunEvent, OpportunityLabel,
 };
 
 export interface Me {
@@ -67,6 +67,7 @@ export type SearchMode = 'all' | 'vacancies';
 
 export interface Api {
   me(): Promise<Me>;
+  logout(): Promise<void>;
   getProfile(): Promise<{ profile: Profile; audit: AuditReport | null; facts: Fact[] }>;
   saveProfile(patch: Partial<Profile>): Promise<{ profile: Profile; audit: AuditReport }>;
   runAudit(): Promise<{ audit: AuditReport; facts: Fact[] }>;
