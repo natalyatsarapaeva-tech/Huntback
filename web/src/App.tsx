@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Api, Me, Profile, Fact, AuditReport, Opportunity, OpportunityDetail, UsageSummary,
-  ImportResult, RunEvent, SearchMode,
+  ImportResult, RunEvent, SearchMode, ResetScope,
 } from './api/types.ts';
 import { runProgress } from '@huntback/core';
 import { httpApi, ApiFailure } from './api/client.ts';
@@ -49,6 +49,8 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [searchMode, setSearchMode] = useState<SearchMode>(readSearchMode);
+  // Меняется при сбросе: экран профиля пересоздаётся и не держит старый черновик.
+  const [profileEpoch, setProfileEpoch] = useState(0);
 
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [elapsed, setElapsed] = useState(0);
@@ -182,6 +184,25 @@ export function App() {
     setStatus(failed
       ? { kind: 'error', text: `Match checked for ${ok} of ${total}. ${failed} failed${stopped ? ', stopped' : ''}: ${lastError}` }
       : { kind: 'ok', text: `Match checked for ${ok} place${ok === 1 ? '' : 's'} — sorted by match` });
+  };
+
+  const RESET_DONE: Record<ResetScope, string> = {
+    all: 'Everything cleared — let’s set up your profile again',
+    search: 'Search results and history cleared',
+    profile: 'Profile and fact bank cleared — let’s set them up again',
+    budget: 'Budget reset: this month’s spending starts from $0',
+  };
+
+  const resetData = async (scope: ResetScope) => {
+    const r = await run('Clearing data', () => api.resetData(scope), () => RESET_DONE[scope]);
+    if (r === null) return;
+    const p = await api.getProfile();
+    setProfile(p.profile); setFacts(p.facts); setAudit(p.audit);
+    setSelected(null); setDetail(null);
+    await refreshList(api);
+    setUsage(await api.usage());
+    setProfileEpoch(e => e + 1);
+    if (scope === 'all' || scope === 'profile') { setTab('places'); setOnboarding(true); }
   };
 
   const changeSearchMode = (m: SearchMode) => {
@@ -324,9 +345,10 @@ export function App() {
           />
         )}
         {tab === 'profile' && (
-          <ProfileScreen
+          <ProfileScreen key={profileEpoch}
             profile={profile} facts={facts} audit={audit} busy={busy}
             onSave={saveProfile} onAudit={runAudit} onPatchFact={patchFact} onDeleteFact={deleteFact}
+            onReset={resetData}
           />
         )}
         {tab === 'usage' && <Usage data={usage} />}

@@ -5,7 +5,7 @@
 // требовать кнопки «сохранить».
 
 import { useEffect, useRef, useState } from 'react';
-import type { Profile as P, Fact, AuditReport, LanguageLevel, WorkAuth } from '../api/types.ts';
+import type { Profile as P, Fact, AuditReport, LanguageLevel, WorkAuth, ResetScope } from '../api/types.ts';
 import { CEFR_ORDER } from '@huntback/core';
 import { Card, Field, Chip } from '../components/ui.tsx';
 
@@ -88,6 +88,92 @@ function FactEditor({ fact, onSave, onCancel }: {
   );
 }
 
+/** Что и где искать — те же поля, что на втором шаге онбординга. */
+export type SearchPrefs = Pick<P, 'perimeter' | 'geo' | 'industries' | 'exclude' | 'breadth'>;
+
+export function SearchPrefsFields({ value, onChange }: {
+  value: SearchPrefs; onChange: (patch: Partial<SearchPrefs>) => void;
+}) {
+  return (
+    <>
+      <Field label="Roles you are interested in"
+        hint="Separate with semicolons — each one becomes its own search direction. For example: VP Operations; Head of Supply Chain; Director of Logistics">
+        <textarea className="textarea" style={{ minHeight: 88 }} value={value.perimeter}
+          onChange={e => onChange({ perimeter: e.target.value })} />
+      </Field>
+      <div className="row">
+        <Field label="Geography" hint="Countries separated by commas — work authorization is checked against them">
+          <input className="input" value={value.geo} onChange={e => onChange({ geo: e.target.value })}
+            placeholder="Sweden, Germany" />
+        </Field>
+        <Field label="Priority industries">
+          <input className="input" value={value.industries} onChange={e => onChange({ industries: e.target.value })} />
+        </Field>
+      </div>
+      <Field label="Exclude" hint="Companies, industries or formats that definitely don’t fit">
+        <input className="input" value={value.exclude} onChange={e => onChange({ exclude: e.target.value })} />
+      </Field>
+      <Field label="Search breadth">
+        <select className="select" value={value.breadth} onChange={e => onChange({ breadth: e.target.value as P['breadth'] })}>
+          <option value="narrow">Narrow — mostly published vacancies</option>
+          <option value="medium">Medium — vacancies and hypotheses equally</option>
+          <option value="wide">Wide — more companies where the role isn’t open yet</option>
+        </select>
+      </Field>
+    </>
+  );
+}
+
+const RESETS: { scope: ResetScope; title: string; what: string; confirm: string; danger?: boolean }[] = [
+  {
+    scope: 'search', title: 'Clear search results',
+    what: 'Deletes every place, its analysis, resume and letter drafts, and the search run history. Your profile stays.',
+    confirm: 'Delete all places, analyses, drafts and search history? This cannot be undone.',
+  },
+  {
+    scope: 'profile', title: 'Clear profile',
+    what: 'Deletes your resume, notes, search preferences, the audit and the whole fact bank. Places stay; you’ll go through setup again.',
+    confirm: 'Delete your resume, profile fields and fact bank? This cannot be undone.',
+  },
+  {
+    scope: 'budget', title: 'Reset budget',
+    what: 'Clears the spending log, so this month’s counter starts again from $0. It does not refund anything — real OpenAI charges stay as they are.',
+    confirm: 'Reset the spending counter to $0? The history of calls and errors will be deleted.',
+  },
+  {
+    scope: 'all', title: 'Clean up everything', danger: true,
+    what: 'All of the above: places and history, profile and facts, and the spending log. Your account and sign-in stay.',
+    confirm: 'Delete ALL your data — places, history, profile, facts and the spending log? This cannot be undone.',
+  },
+];
+
+function ResetPanel({ busy, onReset }: { busy: boolean; onReset: (scope: ResetScope) => void }) {
+  return (
+    <Card>
+      <div className="card-head">
+        <div style={{ flex: 1 }}>
+          <h3>Reset data</h3>
+          <div className="sub">Start over in part or completely. Nothing here can be undone.</div>
+        </div>
+      </div>
+      <div className="card-pad stack gap-12">
+        {RESETS.map(r => (
+          <div key={r.scope} className="flex items-center between wrap gap-12">
+            <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+              <div style={{ fontWeight: 500, fontSize: 14 }}>{r.title}</div>
+              <div className="small muted">{r.what}</div>
+            </div>
+            <button className={`btn btn-sm ${r.danger ? 'btn-danger' : 'btn-secondary'}`} disabled={busy}
+              onClick={() => { if (confirm(r.confirm)) onReset(r.scope); }}>
+              {r.title}
+            </button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function AuditPanel({ audit, busy, onRun }: { audit: AuditReport | null; busy: boolean; onRun: () => void }) {
   return (
     <Card>
@@ -139,12 +225,13 @@ function useAutosave<T>(value: T, save: (v: T) => void, ms = 700) {
   }, [value]);
 }
 
-export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDeleteFact }: {
+export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDeleteFact, onReset }: {
   profile: P; facts: Fact[]; audit: AuditReport | null; busy: boolean;
   onSave: (patch: Partial<P>) => void;
   onAudit: () => void;
   onPatchFact: (id: string, patch: Partial<Fact>) => void;
   onDeleteFact: (id: string) => void;
+  onReset: (scope: ResetScope) => void;
 }) {
   const [draft, setDraft] = useState(profile);
   useEffect(() => setDraft(profile), [profile.resume_text]);
@@ -171,6 +258,18 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
           hint="What you learned, whom you grew, why there were gaps. Often stronger than the resume itself.">
           <textarea className="textarea" value={draft.extras_text} onChange={e => set('extras_text', e.target.value)} />
         </Field>
+      </Card>
+
+      <Card>
+        <div className="card-head">
+          <div style={{ flex: 1 }}>
+            <h3>What you’re looking for</h3>
+            <div className="sub">Roles, geography and breadth used by every search run</div>
+          </div>
+        </div>
+        <div className="card-pad">
+          <SearchPrefsFields value={draft} onChange={patch => setDraft(d => ({ ...d, ...patch }))} />
+        </div>
       </Card>
 
       <AuditPanel audit={audit} busy={busy} onRun={onAudit} />
@@ -213,7 +312,7 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
               <input className="input" inputMode="numeric" value={scale.budget_max ?? ''}
                 onChange={e => set('scale', { ...scale, budget_max: e.target.value ? Number(e.target.value) : null })} />
             </Field>
-            <Field label="Geography">
+            <Field label="Geographic scope">
               <input className="input" value={scale.geo_scope ?? ''}
                 onChange={e => set('scale', { ...scale, geo_scope: e.target.value })} placeholder="3 countries" />
             </Field>
@@ -249,6 +348,8 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
           </div>
         </div>
       </Card>
+
+      <ResetPanel busy={busy} onReset={onReset} />
     </div>
   );
 }

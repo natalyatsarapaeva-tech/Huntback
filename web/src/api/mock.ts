@@ -194,7 +194,7 @@ function withBlockers(id: string, a: Analysis): Analysis {
 
 let documents: Record<string, DocumentRecord[]> = {};
 
-const usageLog = [
+let usageLog = [
   { operation: 'audit' as const, model: 'gpt-5.6-sol', tokens_in: 12000, tokens_out: 3100, tool_calls: 0, cost_usd: 0.11, ok: true, created_at: new Date(Date.now() - 5 * 864e5).toISOString() },
   { operation: 'discover' as const, model: 'gpt-5.6-terra', tokens_in: 22000, tokens_out: 4200, tool_calls: 6, cost_usd: 0.16, ok: true, created_at: new Date(Date.now() - 4 * 864e5).toISOString() },
   { operation: 'analyse' as const, model: 'gpt-5.6-sol', tokens_in: 18000, tokens_out: 2200, tool_calls: 0, cost_usd: 0.036, ok: true, created_at: new Date(Date.now() - 3 * 864e5).toISOString() },
@@ -216,6 +216,17 @@ export const mockApi: Api = {
 
   async logout() {
     await delay(80);
+  },
+
+  async resetData(scope) {
+    await delay(300);
+    if (scope === 'all' || scope === 'search') {
+      opportunities = [];
+      documents = {};
+      for (const k of Object.keys(analyses)) delete analyses[k];
+    }
+    if (scope === 'all' || scope === 'profile') resetToBlankProfile();
+    if (scope === 'all' || scope === 'budget') usageLog = [];
   },
 
   async getProfile() {
@@ -473,6 +484,7 @@ Would you be open to a twenty-minute call in the week of 15 September?`;
 export function resetToBlankProfile(): void {
   profile = {
     ...profile, resume_text: '', extras_text: '', perimeter: '', geo: '',
+    industries: '', exclude: '', breadth: 'medium', salary_range: '', photo_policy: 'auto',
     languages: [], work_auth: [], scale: null, relocation: null, gaps: [], roles: [],
     linkedin_url: '', linkedin_complete: false, years_exp: null,
   };

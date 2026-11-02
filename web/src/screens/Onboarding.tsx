@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import type { Profile, Fact, AuditReport } from '../api/types.ts';
 import { Field, Card } from '../components/ui.tsx';
-import { FactList } from './Profile.tsx';
+import { FactList, SearchPrefsFields, type SearchPrefs } from './Profile.tsx';
 
 const STEPS = ['Resume', 'Perimeter', 'Facts', 'Doubts'] as const;
 
@@ -20,18 +20,17 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
   const [step, setStep] = useState(0);
   const [resume, setResume] = useState(profile.resume_text);
   const [extras, setExtras] = useState(profile.extras_text);
-  const [perimeter, setPerimeter] = useState(profile.perimeter);
-  const [geo, setGeo] = useState(profile.geo);
-  const [industries, setIndustries] = useState(profile.industries);
-  const [exclude, setExclude] = useState(profile.exclude);
-  const [breadth, setBreadth] = useState(profile.breadth);
+  const [prefs, setPrefs] = useState<SearchPrefs>({
+    perimeter: profile.perimeter, geo: profile.geo, industries: profile.industries,
+    exclude: profile.exclude, breadth: profile.breadth,
+  });
 
   const confirmed = facts.filter(f => f.confirmed).length;
 
   async function next() {
     if (step === 0) { await onSave({ resume_text: resume, extras_text: extras }); setStep(1); return; }
     if (step === 1) {
-      await onSave({ perimeter, geo, industries, exclude, breadth });
+      await onSave(prefs);
       setStep(2);
       if (!facts.length) await onAudit();
       return;
@@ -78,29 +77,8 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
             roles. List them separated by semicolons: the more there are, the wider
             the search looks.
           </p>
-          <Field label="Roles you are interested in"
-            hint="For example: VP Operations; Head of Supply Chain; Director of Logistics">
-            <textarea className="textarea" style={{ minHeight: 88 }} value={perimeter}
-              onChange={e => setPerimeter(e.target.value)} />
-          </Field>
-          <div className="row">
-            <Field label="Geography" hint="Countries separated by commas — work authorization is checked against them">
-              <input className="input" value={geo} onChange={e => setGeo(e.target.value)} placeholder="Sweden, Germany" />
-            </Field>
-            <Field label="Priority industries">
-              <input className="input" value={industries} onChange={e => setIndustries(e.target.value)} />
-            </Field>
-          </div>
-          <Field label="Exclude" hint="Companies, industries or formats that definitely don’t fit">
-            <input className="input" value={exclude} onChange={e => setExclude(e.target.value)} />
-          </Field>
-          <Field label="Search breadth">
-            <select className="select" value={breadth} onChange={e => setBreadth(e.target.value as Profile['breadth'])}>
-              <option value="narrow">Narrow — mostly published vacancies</option>
-              <option value="medium">Medium — vacancies and hypotheses equally</option>
-              <option value="wide">Wide — more companies where the role isn’t open yet</option>
-            </select>
-          </Field>
+          <SearchPrefsFields value={prefs} onChange={patch => setPrefs(x => ({ ...x, ...patch }))} />
+          <p className="small muted">You can change all of this later in your profile.</p>
         </Card>
       )}
 

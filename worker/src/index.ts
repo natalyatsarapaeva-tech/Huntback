@@ -370,6 +370,15 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     }
   }
 
+  // ── Сброс данных (аккаунт остаётся) ──────────────────────────────────────
+  if (p === '/api/account/reset' && m === 'POST') {
+    const b = await body<{ scope?: string }>(request);
+    const scope = b.scope as db.ResetScope;
+    if (!db.RESET_SCOPES.includes(scope)) throw new ApiError('bad_request', 'Unknown reset scope', 400);
+    await db.resetUserData(env, userId, scope);
+    return json({ ok: true, scope });
+  }
+
   // ── Удаление аккаунта (§15.3) ────────────────────────────────────────────
   if (p === '/api/account/delete' && m === 'POST') {
     await env.DB.batch([

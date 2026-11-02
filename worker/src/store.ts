@@ -291,3 +291,46 @@ export async function runsToday(env: Env, userId: string) {
   ).bind(userId).all<{ started_at: string; state: string }>();
   return rows.results ?? [];
 }
+
+// ── Сброс данных пользователя ───────────────────────────────────────────────
+/**
+ * Что стирает сброс. Аккаунт, вход и Google-таблица остаются в любом случае:
+ * это не удаление аккаунта, а чистый лист внутри него.
+ *   search  — места, разборы, документы, история прогонов;
+ *   profile — резюме, поля профиля, аудит и банк фактов;
+ *   budget  — журнал расходов, по которому считается месячный лимит;
+ *   all     — всё перечисленное.
+ */
+export type ResetScope = 'all' | 'search' | 'profile' | 'budget';
+export const RESET_SCOPES: ResetScope[] = ['all', 'search', 'profile', 'budget'];
+
+export async function resetUserData(env: Env, userId: string, scope: ResetScope): Promise<void> {
+  const search = scope === 'all' || scope === 'search';
+  const profile = scope === 'all' || scope === 'profile';
+  const budget = scope === 'all' || scope === 'budget';
+  const stmts: D1PreparedStatement[] = [];
+
+  if (search) {
+    // Требования мест лежат в KV под id места — их чистим до удаления строк.
+    const ids = await env.DB.prepare('SELECT id FROM opportunities WHERE user_id=?').bind(userId)
+      .all<{ id: string }>();
+    await Promise.all((ids.results ?? []).map(r => env.KV.delete(`demand:${r.id}`)));
+    stmts.push(
+      env.DB.prepare('DELETE FROM documents WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM analyses WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM opportunities WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM runs WHERE user_id=?').bind(userId),
+    );
+  }
+  if (profile) {
+    // Без строки профиля getProfile отдаёт пустые значения по умолчанию.
+    stmts.push(
+      env.DB.prepare('DELETE FROM facts WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM profiles WHERE user_id=?').bind(userId),
+    );
+  }
+  if (budget) {
+    stmts.push(env.DB.prepare('DELETE FROM usage_log WHERE user_id=?').bind(userId));
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+}
