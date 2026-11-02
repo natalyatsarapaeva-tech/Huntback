@@ -65,9 +65,13 @@ export interface RunState {
 /** Режим поиска: вакансии и гипотезы либо только вакансии. */
 export type SearchMode = 'all' | 'vacancies';
 
+/** Что стирает сброс: всё, только места, только профиль или только журнал расходов. */
+export type ResetScope = 'all' | 'search' | 'profile' | 'budget';
+
 export interface Api {
   me(): Promise<Me>;
   logout(): Promise<void>;
+  resetData(scope: ResetScope): Promise<void>;
   getProfile(): Promise<{ profile: Profile; audit: AuditReport | null; facts: Fact[] }>;
   saveProfile(patch: Partial<Profile>): Promise<{ profile: Profile; audit: AuditReport }>;
   runAudit(): Promise<{ audit: AuditReport; facts: Fact[] }>;
