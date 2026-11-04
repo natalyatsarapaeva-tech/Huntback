@@ -140,7 +140,8 @@
   <div class="bar">
     <div class="checks" id="providers"></div>
     <span class="estimate" id="estimate"></span>
-    <button type="button" class="btn ghost" id="reset">Сбросить</button>
+    <button type="button" class="btn ghost" id="forget" title="Убрать выдачу и удалить скачанные цены, чтобы следующий поиск взял свежие">Сбросить находки</button>
+    <button type="button" class="btn ghost" id="reset" title="Вернуть города, даты и ползунки к исходным">Сбросить настройки</button>
     <button type="button" class="btn" id="go">Искать</button>
   </div>
 
@@ -369,7 +370,7 @@ function renderAll() { renderOrigins(); renderArrivals(); renderFields(); render
 // ——— Пересчёт ———
 // После любой правки спрашиваем сервер, сколько новых платных запросов нужно.
 // Ноль — ищем сразу (из кэша это мгновенно), иначе ждём кнопку.
-let timer, lastResult, freshNeeded = 0, seq = 0, busy = false, pending = false;
+let timer, lastResult, freshNeeded = 0, lastTotal = 0, seq = 0, busy = false, pending = false;
 function changed() {
   store.set('state', state);
   clearTimeout(timer);
@@ -394,6 +395,7 @@ async function estimate() {
   }
   $('#go').disabled = false;
   freshNeeded = body.fresh;
+  lastTotal = body.total;
   if (body.fresh === 0) {
     $('#estimate').textContent = `${body.total} ${plural(body.total, 'запрос', 'запроса', 'запросов')}, новых платных нет — пересчитываю сразу`;
     $('#go').textContent = 'Искать';
@@ -446,6 +448,29 @@ async function search() {
 }
 
 $('#go').addEventListener('click', search);
+$('#forget').addEventListener('click', async () => {
+  if (busy) return;
+  const paid = state.providerIds.some((id) => id !== 'mock');
+  const cost = paid ? `\n\nСледующий поиск заново потратит запросы к источнику — сейчас это ${lastTotal}.` : '';
+  if (!confirm(`Убрать найденные поездки и удалить скачанные цены?${cost}`)) return;
+  const res = await fetch('/api/reset', { method: 'POST' });
+  const body = await res.json();
+  if (!res.ok) { $('#status').innerHTML = `<div class="errors">${body.errors.map(esc).join('<br>')}</div>`; return; }
+  lastResult = null;
+  $('#results').innerHTML = '';
+  $('#status').textContent = body.removed
+    ? `Находки сброшены: удалено ${body.removed} ${plural(body.removed, 'скачанный ответ', 'скачанных ответа', 'скачанных ответов')}. Нажмите «Искать», чтобы получить свежие цены.`
+    : 'Находки сброшены. Нажмите «Искать», чтобы найти заново.';
+  // Без автопоиска: даже на демо-данных пусть выдача появится по кнопке.
+  clearTimeout(timer);
+  const my = ++seq;
+  const est = await post('/api/estimate');
+  if (my !== seq || !est.ok) return;
+  freshNeeded = est.body.fresh;
+  lastTotal = est.body.total;
+  $('#go').textContent = freshNeeded ? `Искать (−${freshNeeded})` : 'Искать';
+  $('#estimate').textContent = freshNeeded ? `${lastTotal} ${plural(lastTotal, 'запрос', 'запроса', 'запросов')}, из них новых платных: ${freshNeeded}` : `${lastTotal} ${plural(lastTotal, 'запрос', 'запроса', 'запросов')}`;
+});
 $('#reset').addEventListener('click', () => { const ids = state.providerIds; state = fromPreset(preset); state.providerIds = ids; renderAll(); changed(); });
 
 // ——— Выдача ———

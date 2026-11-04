@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { Query } from './types.ts';
@@ -32,6 +32,14 @@ createServer(async (req, res) => {
         providers: providers.map((p) => ({ id: p.id, label: p.label })),
         envReport,
       });
+    }
+    if (req.method === 'POST' && req.url === '/api/reset') {
+      if (progress.running) return send(res, 409, { errors: ['Идёт поиск — дождитесь его, потом сбрасывайте.'] });
+      const dir = join(root, '.cache');
+      const removed = (await readdir(dir).catch(() => [])).length;
+      await rm(dir, { recursive: true, force: true });
+      console.log(`Находки сброшены: удалено скачанных ответов ${removed}.`);
+      return send(res, 200, { removed });
     }
     if (req.method === 'POST' && (req.url === '/api/search' || req.url === '/api/estimate')) {
       let raw = '';
