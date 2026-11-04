@@ -1,4 +1,4 @@
-import type { GroundLeg, Itinerary, Query } from './types.ts';
+import type { GroundLeg, Itinerary, Query, SortBy } from './types.ts';
 import { checkLayovers, type Layover } from './layover.ts';
 import { groundAfterLanding, groundBeforeFlight, type GroundResult } from './ground.ts';
 import { daysBetween } from './time.ts';
@@ -80,7 +80,11 @@ export function evaluateLeg(
   };
 }
 
-/** Оставляет по `keep` лучших ног на каждую пару (аэропорт, дата, город вылета). */
+/**
+ * Оставляет на каждую тройку (аэропорт, дата, город вылета) по `keep` лучших
+ * по баллу и по цене и пару самых быстрых — чтобы при любой сортировке
+ * лучший вариант не отсеялся заранее.
+ */
 export function pruneLegs(legs: Leg[], keep: number): Leg[] {
   const groups = new Map<string, Leg[]>();
   for (const l of legs) {
@@ -89,7 +93,11 @@ export function pruneLegs(legs: Leg[], keep: number): Leg[] {
     g.push(l);
     groups.set(k, g);
   }
-  return [...groups.values()].flatMap((g) => g.sort((a, b) => a.score - b.score).slice(0, keep));
+  return [...groups.values()].flatMap((g) => [...new Set([
+    ...[...g].sort((a, b) => a.score - b.score).slice(0, keep),
+    ...[...g].sort((a, b) => a.money - b.money).slice(0, keep),
+    ...[...g].sort((a, b) => a.minutes - b.minutes).slice(0, 2),
+  ])]);
 }
 
 export function combine(outs: Leg[], ins: Leg[], q: Query, limit = 60): Trip[] {
@@ -111,17 +119,34 @@ export function combine(outs: Leg[], ins: Leg[], q: Query, limit = 60): Trip[] {
       });
     }
   }
-  trips.sort((a, b) => a.score - b.score);
   markPareto(trips);
+  const best = minBy(trips, (t) => t.score);
+  const cheapest = minBy(trips, (t) => t.money);
+  const fastest = minBy(trips, (t) => t.minutes);
+  trips.sort(order(q.sortBy ?? 'score'));
   const top = trips.slice(0, limit);
-  // Самый дешёвый и самый быстрый показываем, даже если они не вошли в топ по баллу.
-  const cheapest = [...trips].sort((a, b) => a.money - b.money)[0];
-  const fastest = [...trips].sort((a, b) => a.minutes - b.minutes)[0];
-  for (const t of [cheapest, fastest]) if (t && !top.includes(t)) top.push(t);
-  if (top[0]) top[0].tags.push('лучший баланс');
+  // Лучший, самый дешёвый и самый быстрый видны при любой сортировке.
+  for (const t of [best, cheapest, fastest]) if (t && !top.includes(t)) top.push(t);
+  top.sort(order(q.sortBy ?? 'score'));
+  best?.tags.push('лучший баланс');
   cheapest?.tags.push('самый дешёвый');
   fastest?.tags.push('самый быстрый');
   return top;
+}
+
+function minBy<T>(xs: T[], key: (x: T) => number): T | undefined {
+  let best: T | undefined;
+  for (const x of xs) if (best === undefined || key(x) < key(best)) best = x;
+  return best;
+}
+
+function order(by: SortBy): (a: Trip, b: Trip) => number {
+  switch (by) {
+    case 'money': return (a, b) => a.money - b.money || a.minutes - b.minutes;
+    case 'minutes': return (a, b) => a.minutes - b.minutes || a.money - b.money;
+    case 'date': return (a, b) => a.out.itinerary.segments[0].dep.localeCompare(b.out.itinerary.segments[0].dep) || a.money - b.money;
+    default: return (a, b) => a.score - b.score;
+  }
 }
 
 function markPareto(trips: Trip[]): void {

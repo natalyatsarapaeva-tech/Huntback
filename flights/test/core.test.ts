@@ -227,3 +227,18 @@ test('без аэропорта для обратного пути — поня�
   const errs = validate({ ...q, arrivals: q.arrivals.map((a) => ({ ...a, useIn: false })) });
   assert.ok(errs.some((e) => /откуда улетать обратно/.test(e)));
 });
+
+test('сортировка по цене: первый — самый дешёвый из всех, порядок по возрастанию', async () => {
+  const byScore = await runSearch(q, [mockProvider]);
+  const byMoney = await runSearch({ ...q, sortBy: 'money' }, [mockProvider]);
+  const prices = byMoney.trips.map((t) => t.money);
+  assert.deepEqual(prices, [...prices].sort((a, b) => a - b));
+  assert.ok(byMoney.trips[0].tags.includes('самый дешёвый'));
+  assert.ok(byMoney.trips[0].money <= Math.min(...byScore.trips.map((t) => t.money)));
+  assert.equal(byMoney.trips.filter((t) => t.tags.includes('лучший баланс')).length, 1);
+  const byTime = await runSearch({ ...q, sortBy: 'minutes' }, [mockProvider]);
+  assert.ok(byTime.trips[0].tags.includes('самый быстрый'));
+  const byDate = await runSearch({ ...q, sortBy: 'date' }, [mockProvider]);
+  const deps = byDate.trips.map((t) => t.out.itinerary.segments[0].dep);
+  assert.deepEqual(deps, [...deps].sort());
+});

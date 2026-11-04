@@ -83,6 +83,8 @@ export interface GroundSettings {
   hotelCost: number;
 }
 
+export type SortBy = 'score' | 'money' | 'minutes' | 'date';
+
 export interface Query {
   /** Откуда летим туда. */
   origins: string[];
@@ -103,6 +105,8 @@ export interface Query {
   ground: GroundSettings;
   /** Во сколько € оценивается час в дороге — этим цена «торгуется» с длительностью. */
   valueOfHour: number;
+  /** Порядок выдачи: баланс цены и времени, цена, время в пути, дата вылета. */
+  sortBy?: SortBy;
   currency: string;
   /** Курсы к валюте запроса, если провайдер вернул другую. */
   fx: Record<string, number>;
