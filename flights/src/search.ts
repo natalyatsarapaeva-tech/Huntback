@@ -36,12 +36,16 @@ export function plannedRequests(q: Query): { dir: 'out' | 'in'; origin: string; 
   const out = dateRange(q.departFrom, q.departTo);
   const back = dateRange(addDays(q.departFrom, q.tripDays.min), addDays(q.departTo, q.tripDays.max));
   const list: ReturnType<typeof plannedRequests> = [];
+  // Всегда до двух пересадок: число пересадок фильтруем у себя, чтобы ползунок
+  // не тратил платные запросы.
+  const base = { maxStops: 2, currency: q.currency };
   for (const origin of q.origins) {
-    for (const a of q.arrivals) {
-      // Всегда до двух пересадок: число пересадок фильтруем у себя, чтобы ползунок
-      // не тратил платные запросы.
-      const base = { maxStops: 2, currency: q.currency };
+    for (const a of q.arrivals.filter((x) => x.useOut !== false)) {
       for (const date of out) list.push({ dir: 'out', origin, airport: a.airport, req: { ...base, from: origin, to: a.airport, date } });
+    }
+  }
+  for (const origin of q.returnOrigins ?? q.origins) {
+    for (const a of q.arrivals.filter((x) => x.useIn !== false)) {
       for (const date of back) list.push({ dir: 'in', origin, airport: a.airport, req: { ...base, from: a.airport, to: origin, date } });
     }
   }

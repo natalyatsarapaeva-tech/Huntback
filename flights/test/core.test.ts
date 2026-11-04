@@ -203,3 +203,27 @@ test('.env из Блокнота: BOM, UTF-16, пробелы, кавычки, �
   assert.match(report, /\.env\.txt/);
   assert.match(report, /…1234/);
 });
+
+test('обратно только из Валенсии: обратные запросы — только VLC, поездки — только с ним', async () => {
+  const qq: Query = { ...q, arrivals: q.arrivals.map((a) => ({ ...a, useIn: a.airport === 'VLC' })) };
+  const plan = plannedRequests(qq);
+  assert.equal(plan.filter((p) => p.dir === 'out').length, 4 * 6);
+  assert.deepEqual([...new Set(plan.filter((p) => p.dir === 'in').map((p) => p.req.from))], ['VLC']);
+  assert.equal(plan.length, 4 * 6 + 1 * 8);
+  const r = await runSearch(qq, [mockProvider]);
+  assert.ok(r.trips.length > 0);
+  assert.ok(r.trips.every((t) => t.in.airport === 'VLC'));
+  assert.ok(r.trips.some((t) => t.out.airport !== 'VLC'));
+});
+
+test('туда из Мальмё, обратно только в Копенгаген', () => {
+  const plan = plannedRequests({ ...q, origins: ['MMX'], returnOrigins: ['CPH'] });
+  assert.ok(plan.filter((p) => p.dir === 'out').every((p) => p.req.from === 'MMX'));
+  assert.ok(plan.filter((p) => p.dir === 'in').every((p) => p.req.to === 'CPH'));
+});
+
+test('без аэропорта для обратного пути — понятная ошибка', async () => {
+  const { validate } = await import('../src/query.ts');
+  const errs = validate({ ...q, arrivals: q.arrivals.map((a) => ({ ...a, useIn: false })) });
+  assert.ok(errs.some((e) => /откуда улетать обратно/.test(e)));
+});

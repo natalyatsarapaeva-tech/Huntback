@@ -69,6 +69,9 @@ export interface GroundLeg {
     headwayMin: number;
   };
   bookingLinks: { label: string; url: string }[];
+  /** Летать сюда туда / отсюда обратно. Не задано — да. */
+  useOut?: boolean;
+  useIn?: boolean;
 }
 
 export interface GroundSettings {
@@ -81,7 +84,10 @@ export interface GroundSettings {
 }
 
 export interface Query {
+  /** Откуда летим туда. */
   origins: string[];
+  /** Куда возвращаемся. Не задано — туда же, откуда летим. */
+  returnOrigins?: string[];
   destinationName: string;
   /** Аэропорты прилёта; для каждого — путь до конечного города. */
   arrivals: GroundLeg[];

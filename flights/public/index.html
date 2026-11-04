@@ -35,6 +35,8 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 6px 4px 10px; background: var(--bg); }
   .chip b { font-weight: 600; }
+  .dir { font: inherit; font-size: 12px; border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 99px; padding: 1px 8px; cursor: pointer; }
+  .dir[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--card); }
   .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
   .add { display: flex; gap: 6px; }
   .add input { width: 90px; text-transform: uppercase; }
@@ -96,7 +98,7 @@
     <div id="arrivals"></div>
     <button type="button" class="btn ghost" id="addArrival">+ аэропорт прилёта</button>
     <label class="check" style="margin-top:10px"><input type="checkbox" id="returnSameAirport"> улетать обратно из того же аэропорта, куда прилетели</label>
-    <p class="hint">Поля поезда пустые — значит, аэропорт в самом конечном городе и нужен только трансфер. Цены и время поездов ориентировочные: поправьте, если уже смотрели расписание.</p>
+    <p class="hint">«Туда» — прилетать сюда, «обратно» — улетать отсюда домой: например, обратно только из Валенсии. Поля поезда пустые — значит, аэропорт в самом конечном городе и нужен только трансфер. Цены и время поездов ориентировочные: поправьте, если уже смотрели расписание.</p>
   </section>
 
   <section class="panel">
@@ -166,10 +168,10 @@ let preset, state, providers = [], envReport = [];
 // state — всё, что редактируется в интерфейсе; из него собирается запрос.
 function fromPreset(p) {
   return {
-    origins: p.origins.map((code) => ({ code, on: true })),
+    origins: p.origins.map((code) => ({ code, out: true, in: true })),
     returnSameOrigin: p.returnSameOrigin,
     destinationName: p.destinationName,
-    arrivals: p.arrivals.map((a) => ({ ...structuredClone(a), on: true })),
+    arrivals: p.arrivals.map((a) => ({ ...structuredClone(a), useOut: a.useOut !== false, useIn: a.useIn !== false })),
     returnSameAirport: p.returnSameAirport,
     departFrom: p.departFrom, departTo: p.departTo,
     tripDays: { ...p.tripDays },
@@ -183,9 +185,10 @@ function fromPreset(p) {
 
 function toQuery() {
   return {
-    origins: state.origins.filter((o) => o.on).map((o) => o.code),
+    origins: state.origins.filter((o) => o.out).map((o) => o.code),
+    returnOrigins: state.origins.filter((o) => o.in).map((o) => o.code),
     destinationName: state.destinationName,
-    arrivals: state.arrivals.filter((a) => a.on && /^[A-Z]{3}$/.test(a.airport)).map(({ on, ...a }) => a),
+    arrivals: state.arrivals.filter((a) => (a.useOut || a.useIn) && /^[A-Z]{3}$/.test(a.airport)),
     departFrom: state.departFrom, departTo: state.departTo,
     tripDays: state.tripDays,
     returnSameAirport: state.returnSameAirport,
@@ -202,12 +205,15 @@ function toQuery() {
 // ——— Откуда ———
 function renderOrigins() {
   $('#origins').innerHTML = state.origins.map((o, i) => `
-    <span class="chip"><label class="check"><input type="checkbox" data-i="${i}" ${o.on ? 'checked' : ''}><b>${esc(o.code)}</b></label>
+    <span class="chip"><b>${esc(o.code)}</b>
+    <button type="button" class="dir" data-i="${i}" data-d="out" aria-pressed="${o.out}" title="Улетать отсюда туда">туда</button>
+    <button type="button" class="dir" data-i="${i}" data-d="in" aria-pressed="${o.in}" title="Возвращаться сюда">обратно</button>
     <button type="button" class="x" data-del="${i}" title="Убрать">×</button></span>`).join('') + `
     <span class="add"><input id="newOrigin" maxlength="3" placeholder="IATA"><button type="button" class="btn ghost" id="addOrigin">Добавить</button></span>`;
 }
-$('#origins').addEventListener('change', (e) => { const i = e.target.dataset.i; if (i !== undefined) { state.origins[i].on = e.target.checked; changed(true); } });
 $('#origins').addEventListener('click', (e) => {
+  const { i, d } = e.target.dataset;
+  if (d) { state.origins[i][d] = !state.origins[i][d]; renderOrigins(); changed(true); }
   if (e.target.dataset.del !== undefined) { state.origins.splice(+e.target.dataset.del, 1); renderOrigins(); changed(true); }
   if (e.target.id === 'addOrigin') addOrigin();
 });
@@ -215,7 +221,7 @@ $('#origins').addEventListener('keydown', (e) => { if (e.target.id === 'newOrigi
 function addOrigin() {
   const code = $('#newOrigin').value.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(code) || state.origins.some((o) => o.code === code)) { $('#newOrigin').focus(); return; }
-  state.origins.push({ code, on: true });
+  state.origins.push({ code, out: true, in: true });
   renderOrigins();
   changed(true);
 }
@@ -228,11 +234,12 @@ const num = (v) => (v === '' || v == null ? null : +v);
 function renderArrivals() {
   $('#arrivals').innerHTML = state.arrivals.map((a, i) => {
     const r = a.rail ?? {};
-    return `<div class="arrival ${a.on ? '' : 'off'}" data-i="${i}">
+    return `<div class="arrival ${a.useOut || a.useIn ? '' : 'off'}" data-i="${i}">
       <div class="arrival-head">
-        <input type="checkbox" data-f="on" ${a.on ? 'checked' : ''} title="Искать сюда">
         <input type="text" class="code" data-f="airport" value="${esc(a.airport)}" maxlength="3" placeholder="IATA">
         <input type="text" data-f="label" value="${esc(a.label)}" placeholder="Подпись">
+        <button type="button" class="dir" data-d="useOut" aria-pressed="${a.useOut}" title="Прилетать сюда">туда</button>
+        <button type="button" class="dir" data-d="useIn" aria-pressed="${a.useIn}" title="Улетать отсюда обратно">обратно</button>
         <button type="button" class="x" data-del="${i}" title="Убрать">×</button>
       </div>
       <details>
@@ -256,9 +263,8 @@ $('#arrivals').addEventListener('change', (e) => {
   if (!box || !f) return;
   const a = state.arrivals[+box.dataset.i];
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-  const network = f === 'on' || f === 'airport';
-  if (f === 'on') a.on = v;
-  else if (f === 'airport') a.airport = v.trim().toUpperCase();
+  const network = f === 'airport';
+  if (f === 'airport') a.airport = v.trim().toUpperCase();
   else if (f === 'label') a.label = v;
   else if (f.startsWith('access.')) a.access[f.slice(7)] = +v || 0;
   else if (f.startsWith('rail.')) {
@@ -276,6 +282,16 @@ $('#arrivals').addEventListener('change', (e) => {
   changed(network);
 });
 $('#arrivals').addEventListener('click', (e) => {
+  const d = e.target.dataset.d;
+  if (d) {
+    const a = state.arrivals[+e.target.closest('.arrival').dataset.i];
+    a[d] = !a[d];
+    const open = [...document.querySelectorAll('#arrivals details')].map((x) => x.open);
+    renderArrivals();
+    document.querySelectorAll('#arrivals details').forEach((x, j) => (x.open = open[j]));
+    changed(true);
+    return;
+  }
   if (e.target.dataset.del === undefined) return;
   state.arrivals.splice(+e.target.dataset.del, 1);
   renderArrivals();
@@ -283,7 +299,7 @@ $('#arrivals').addEventListener('click', (e) => {
 });
 $('#addArrival').addEventListener('click', () => {
   state.arrivals.push({
-    airport: '', label: 'Новый аэропорт + поезд', on: true,
+    airport: '', label: 'Новый аэропорт + поезд', useOut: true, useIn: true,
     access: { name: 'Трансфер аэропорт ↔ вокзал', minutes: 30, cost: 5 },
     rail: { name: 'Поезд', minutes: 120, cost: 25, firstDep: '06:30', lastDep: '21:00', headwayMin: 60 },
     bookingLinks: [],
@@ -486,6 +502,9 @@ fetch('/api/config').then((r) => r.json()).then((c) => {
   providers = c.providers;
   envReport = c.envReport ?? [];
   state = { ...fromPreset(preset), ...(store.get('state') ?? {}) };
+  // Сохранённое до появления «туда / обратно»: одна галочка на оба направления.
+  for (const o of state.origins) if (o.out === undefined) { o.out = o.in = o.on !== false; delete o.on; }
+  for (const a of state.arrivals) if (a.useOut === undefined) { a.useOut = a.useIn = a.on !== false; delete a.on; }
   renderAll();
   changed();
 });

@@ -12,9 +12,11 @@ export async function loadPreset(path: string): Promise<Query> {
 /** Ошибки, понятные человеку; пустой список — запрос годен. */
 export function validate(q: Query): string[] {
   const e: string[] = [];
-  if (!q.origins?.length) e.push('Укажите аэропорт или город вылета (код IATA, например CPH или MMX).');
-  for (const o of q.origins ?? []) if (!IATA.test(o)) e.push(`«${o}» — не код IATA из трёх латинских букв.`);
-  if (!q.arrivals?.length) e.push('Выберите хотя бы один аэропорт прилёта.');
+  if (!q.origins?.length) e.push('Отметьте хотя бы один аэропорт, откуда лететь туда (например CPH или MMX).');
+  if (q.returnOrigins && !q.returnOrigins.length) e.push('Отметьте хотя бы один аэропорт, куда возвращаться.');
+  for (const o of [...(q.origins ?? []), ...(q.returnOrigins ?? [])]) if (!IATA.test(o)) e.push(`«${o}» — не код IATA из трёх латинских букв.`);
+  if (!q.arrivals?.some((a) => a.useOut !== false)) e.push('Отметьте хотя бы один аэропорт, куда прилетать.');
+  if (!q.arrivals?.some((a) => a.useIn !== false)) e.push('Отметьте хотя бы один аэропорт, откуда улетать обратно.');
   for (const a of q.arrivals ?? []) if (!IATA.test(a.airport)) e.push(`Аэропорт прилёта «${a.airport}» — не код IATA.`);
   if (!DATE.test(q.departFrom) || !DATE.test(q.departTo)) e.push('Даты — в формате ГГГГ-ММ-ДД.');
   else if (q.departTo < q.departFrom) e.push('Окно вылета: конец раньше начала.');
