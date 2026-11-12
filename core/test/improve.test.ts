@@ -172,3 +172,33 @@ test('регрессия: «20-minute call» не блокирует письм�
   assert.equal(nums.length, 1);
   assert.match(nums[0], /99/);
 });
+
+test('правка «только здесь» и «переиспользовать»: что уходит в банк фактов', async () => {
+  const { reuseAppliedFix, wordingsToSave, addWording, MAX_WORDINGS } = await import('../src/index.ts');
+  const fix = (fact_id: string | null, rewrite: string) => ({ reason: 'wording' as const, fact_id, rewrite, question: '', strength_after: 'strong' as const, status: 'open' as const });
+  const a = exp({ strength: 'partial', fix: fix('f1', 'Owned on-time delivery as a network KPI') });
+  const b = exp({ strength: 'gap', fix: fix('f2', 'Ran last-mile delivery') });
+  const c = exp({ strength: 'gap', fix: fix(null, 'No fact to save into') });
+
+  const place = applyWordingFix(a);
+  assert.equal(place.fix!.scope, 'place');
+  const reused = applyWordingFix(b, 'reuse');
+  assert.equal(reused.fix!.scope, 'reuse');
+  assert.equal(applyWordingFix(c, 'reuse').fix!.scope, 'place', 'без факта сохранять некуда');
+
+  assert.deepEqual([...wordingsToSave([place, reused]).entries()], [['f2', ['Ran last-mile delivery']]]);
+  const upgraded = reuseAppliedFix(place);
+  assert.equal(upgraded.fix!.scope, 'reuse');
+  assert.equal(reuseAppliedFix(exp({ strength: 'gap', fix: fix('f1', 'x') })).fix!.scope, undefined, 'открытую правку так не сохранить');
+
+  const all = applyAllWordingFixes([a, b], 'reuse');
+  assert.equal(wordingsToSave(all.expectations).size, 2);
+
+  const f = fact({ id: 'f1', action: 'Reduced late shipments', result: 'from 12% to 3%' });
+  assert.deepEqual(addWording(f, 'Owned on-time delivery: late shipments 12% → 3%'), ['Owned on-time delivery: late shipments 12% → 3%']);
+  assert.equal(addWording({ ...f, wordings: ['Owned on-time delivery'] }, 'owned on-time delivery'), null, 'без дублей');
+  assert.equal(addWording(f, 'Reduced late shipments from 12% to 3%'), null, 'не повторяет сам факт');
+  const many = Array.from({ length: MAX_WORDINGS }, (_, i) => 'w' + i);
+  assert.deepEqual(addWording({ ...f, wordings: many }, 'new')!.slice(-1), ['new']);
+  assert.equal(addWording({ ...f, wordings: many }, 'new')!.length, MAX_WORDINGS);
+});

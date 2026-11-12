@@ -34,6 +34,7 @@ function stablePrefix(profile: Profile, facts: Fact[]): string {
   const compact = confirmed.filter(f => !f.quantified);
   return [
     'You work with ONE candidate. Below are the profile and the fact bank; they do not change between requests. Always answer in English.',
+    '"also phrased as" lists wordings of the same fact the candidate approved for reuse: prefer the one closest to the employer\'s language; never count them as separate achievements.',
     '',
     '=== PROFILE ===',
     profile.resume_text,
@@ -48,12 +49,18 @@ function stablePrefix(profile: Profile, facts: Fact[]): string {
     '',
     // Селективный дамп (приём twin): важное полностью, остальное строкой.
     '=== FACT BANK (confirmed, quantified) ===',
-    ...full.map(f => [f.id, f.action, f.how ?? '', f.result ?? '', '[' + f.source_hint + ']'].join(' · ')),
+    ...full.map(f => [f.id, f.action, f.how ?? '', f.result ?? '', '[' + f.source_hint + ']'].join(' · ') + alsoPhrased(f)),
     '',
     '=== FACT BANK (confirmed, without a number) ===',
-    ...compact.map(f => f.id + ' · ' + f.action),
+    ...compact.map(f => f.id + ' · ' + f.action + alsoPhrased(f)),
   ].filter(x => x !== '').join('\n');
 }
+
+/**
+ * Формулировки, которые пользователь разрешил переиспользовать: тот же факт
+ * другими словами (обычно — словами работодателя из прошлого разбора).
+ */
+const alsoPhrased = (f: Fact) => (f.wordings?.length ? ' || also phrased as: ' + f.wordings.join(' | ') : '');
 
 /**
  * Классификатор (§10.2 в редакции 1.2): дешёвый вызов сужает внимание дорогого.

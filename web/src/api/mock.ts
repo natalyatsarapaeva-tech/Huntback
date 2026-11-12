@@ -16,6 +16,7 @@ import {
   auditProfile, computeScore, coverage, checkLetter, checkResume,
   reanalyseAfterProfileChange, checkBudget, findDuplicate, companyKey,
   estimateRunSeconds, matchPotential, applyWordingFix, applyAllWordingFixes, dismissFix, applyAnsweredFix,
+  reuseAppliedFix, wordingsToSave, addWording,
   coachAgenda, coachProgress, factReviewQueue, defaultFactQuestion, splitJobTexts, cleanJobText,
   type Demand, type ExpectationFix, type DocumentReview, type ResumeDoc, type CheckResult,
 } from '@huntback/core';
@@ -379,14 +380,16 @@ export const mockApi: Api = {
     const a = analyses[id];
     if (!a) throw new Error('Analyse this place’s expectations first');
     let note = '';
+    const scope = b.scope === 'reuse' ? 'reuse' as const : 'place' as const;
     if (b.action === 'apply_all') {
-      const r = applyAllWordingFixes(a.expectations);
+      const r = applyAllWordingFixes(a.expectations, scope);
       a.expectations = r.expectations;
-      note = `${r.applied} wording fix${r.applied === 1 ? '' : 'es'} applied`;
+      note = `${r.applied} wording fix${r.applied === 1 ? '' : 'es'} applied${scope === 'reuse' ? ' and saved to your fact bank' : ' for this place'}`;
     } else {
       const i = Number(b.index);
       const e = a.expectations[i];
-      if (b.action === 'apply') a.expectations[i] = applyWordingFix(e);
+      if (b.action === 'apply') a.expectations[i] = applyWordingFix(e, scope);
+      if (b.action === 'reuse') a.expectations[i] = reuseAppliedFix(e);
       if (b.action === 'dismiss') a.expectations[i] = dismissFix(e);
       if (b.action === 'answer') {
         const answer = String(b.answer ?? '').trim();
@@ -405,6 +408,18 @@ export const mockApi: Api = {
           note = 'Added to your fact bank and counted for this place';
         }
       }
+    }
+    // Переиспользуемые формулировки — в банк фактов, как в воркере.
+    for (const [factId, texts] of wordingsToSave(a.expectations)) {
+      facts = facts.map(x => {
+        if (x.id !== factId) return x;
+        let wordings = x.wordings ?? [];
+        for (const t of texts) wordings = addWording({ ...x, wordings }, t) ?? wordings;
+        return { ...x, wordings };
+      });
+    }
+    if (b.action === 'apply' || b.action === 'reuse') {
+      note = a.expectations[Number(b.index)].fix?.scope === 'reuse' ? 'Saved to your fact bank — other places will use it too' : 'Wording applied for this place only';
     }
     const w = withBlockers(id, a);
     opportunities = opportunities.map(o => (o.id === id ? { ...o, score: w.score } : o));

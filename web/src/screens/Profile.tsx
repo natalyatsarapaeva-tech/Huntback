@@ -34,6 +34,18 @@ export function FactList({ facts, onPatch, onDelete }: {
                 {f.how && <div className="fact-result">{f.how}</div>}
                 {f.result && <div className="fact-result">{f.result}</div>}
                 <div className="fact-src">“ {f.source_hint} ”</div>
+                {!!f.wordings?.length && (
+                  <div className="wordings mt-8">
+                    <div className="small muted">Also phrased as — reused in every analysis and document:</div>
+                    {f.wordings.map(w => (
+                      <div key={w} className="wording">
+                        <span>{w}</span>
+                        <button className="btn btn-ghost btn-sm" aria-label={`Remove wording: ${w}`}
+                          onClick={() => onPatch(f.id, { wordings: f.wordings!.filter(x => x !== w) })}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex gap-8 mt-8">
                   <button className="btn btn-ghost btn-sm" onClick={() => setEditing(f.id)}>Edit</button>
                   {onDelete && (

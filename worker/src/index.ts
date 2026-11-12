@@ -13,6 +13,7 @@ import {
   type RunEvent, type Demand, type Opportunity, type OpportunityLabel, type Analysis, type Profile,
   type Fact, type FormatVariant, type CoachProposal,
   matchPotential, applyAllWordingFixes, applyWordingFix, dismissFix, applyAnsweredFix,
+  reuseAppliedFix, wordingsToSave, addWording, type FixScope,
   coachAgenda, coachProgress, factReviewQueue,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
@@ -451,18 +452,29 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     if (action === '/fix' && m === 'POST') {
       const stored = await db.getAnalysis(env, userId, id);
       if (!stored) throw new ApiError('no_analysis', 'Analyse this place’s expectations first', 409);
-      const b = await body<{ index?: number; action?: 'apply' | 'answer' | 'dismiss' | 'apply_all'; answer?: string }>(request);
+      const b = await body<{
+        index?: number; action?: 'apply' | 'answer' | 'dismiss' | 'apply_all' | 'reuse'; answer?: string; scope?: FixScope;
+      }>(request);
       const a = stored.analysis;
+      const scope: FixScope = b.scope === 'reuse' ? 'reuse' : 'place';
       let note = '';
+      // Что было переиспользуемым до этого запроса — чтобы сохранить в банк только новое.
+      const savedBefore = wordingsToSave(a.expectations);
       if (b.action === 'apply_all') {
-        const r = applyAllWordingFixes(a.expectations);
+        const r = applyAllWordingFixes(a.expectations, scope);
         a.expectations = r.expectations;
-        note = `${r.applied} wording fix${r.applied === 1 ? '' : 'es'} applied`;
+        note = `${r.applied} wording fix${r.applied === 1 ? '' : 'es'} applied${scope === 'reuse' ? ' and saved to your fact bank' : ' for this place'}`;
       } else {
         const i = Number(b.index);
         const e = a.expectations[i];
         if (!e || !e.fix) throw new ApiError('bad_request', 'No fix for this expectation', 400);
-        if (b.action === 'apply') a.expectations[i] = applyWordingFix(e);
+        if (b.action === 'apply') {
+          a.expectations[i] = applyWordingFix(e, scope);
+          note = a.expectations[i].fix?.scope === 'reuse' ? 'Wording applied and saved to your fact bank' : 'Wording applied for this place only';
+        } else if (b.action === 'reuse') {
+          a.expectations[i] = reuseAppliedFix(e);
+          note = 'Saved to your fact bank — other places and documents will use it too';
+        }
         else if (b.action === 'dismiss') a.expectations[i] = dismissFix(e);
         else if (b.action === 'answer') {
           const answer = String(b.answer ?? '').trim();
@@ -479,6 +491,20 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
             ? (verdict.fact ? 'Added to your fact bank and counted for this place' : 'Counted for this place')
             : 'The answer doesn’t cover this expectation — it stays a gap';
         } else throw new ApiError('bad_request', 'Unknown action', 400);
+      }
+      // «Переиспользовать»: формулировка уходит в банк фактов к своему факту.
+      // Исходный текст факта не меняется — это вторая формулировка, а не замена.
+      const toSave = wordingsToSave(a.expectations);
+      if (toSave.size) {
+        const facts = await db.listFacts(env, userId);
+        for (const [factId, texts] of toSave) {
+          const fresh = texts.filter(t => !(savedBefore.get(factId) ?? []).includes(t));
+          const f = facts.find(x => x.id === factId);
+          if (!f || !fresh.length) continue;
+          let wordings = f.wordings ?? [];
+          for (const t of fresh) wordings = addWording({ ...f, wordings }, t) ?? wordings;
+          if (wordings !== f.wordings) await db.patchFact(env, userId, factId, { wordings });
+        }
       }
       await db.saveAnalysis(env, userId, id, a, stored.demand, 'fix');
       const score = computeScore(a.expectations);

@@ -7,7 +7,7 @@
 // превращается в вопрос пользователю.
 
 import type {
-  Expectation, ExpectationFix, Fact, FactReview, GapReason, Strength, Profile,
+  Expectation, ExpectationFix, Fact, FactReview, GapReason, Strength, Profile, FixScope,
 } from './types.ts';
 import { computeScore } from './score.ts';
 import { extractNumbers, normalize } from './text.ts';
@@ -45,7 +45,7 @@ export function unbackedNumbers(text: string, sources: string[]): string[] {
 export function evidenceCorpus(profile: Profile | null | undefined, facts: Fact[]): string[] {
   return [
     profile?.resume_text ?? '', profile?.extras_text ?? '',
-    ...facts.flatMap(f => [f.action, f.how ?? '', f.result ?? '', f.user_input ?? '',
+    ...facts.flatMap(f => [f.action, f.how ?? '', f.result ?? '', f.user_input ?? '', ...(f.wordings ?? []),
       f.metric_value != null ? String(f.metric_value) : '']),
   ];
 }
@@ -122,26 +122,67 @@ export function matchPotential(expectations: Expectation[]): MatchPotential {
  * работодателя. Банк фактов не меняется — формулировка живёт в разборе этого
  * места и через `evidence` попадает к писателю резюме и письма.
  */
-export function applyWordingFix(e: Expectation): Expectation {
+export function applyWordingFix(e: Expectation, scope: FixScope = 'place'): Expectation {
   if (!e.fix || e.fix.reason !== 'wording' || e.fix.status !== 'open') return e;
+  // «Переиспользовать» без факта некуда сохранить — остаётся правкой этого места.
+  const s: FixScope = scope === 'reuse' && e.fix.fact_id ? 'reuse' : 'place';
   return {
     ...e,
     strength: e.fix.strength_after,
     evidence: e.fix.rewrite,
     fact_id: e.fix.fact_id ?? e.fact_id,
     gap_class: e.fix.strength_after === 'strong' ? null : e.gap_class,
-    fix: { ...e.fix, status: 'applied' },
+    fix: { ...e.fix, status: 'applied', scope: s },
   };
 }
 
-export function applyAllWordingFixes(list: Expectation[]): { expectations: Expectation[]; applied: number } {
+/** Уже принятую «для этого места» формулировку — ещё и в банк фактов. */
+export function reuseAppliedFix(e: Expectation): Expectation {
+  if (!e.fix || e.fix.reason !== 'wording' || e.fix.status !== 'applied' || !e.fix.fact_id) return e;
+  return { ...e, fix: { ...e.fix, scope: 'reuse' } };
+}
+
+export function applyAllWordingFixes(list: Expectation[], scope: FixScope = 'place'): { expectations: Expectation[]; applied: number } {
   let applied = 0;
   const expectations = list.map(e => {
-    const n = applyWordingFix(e);
+    const n = applyWordingFix(e, scope);
     if (n !== e) applied++;
     return n;
   });
   return { expectations, applied };
+}
+
+/**
+ * Формулировки, которые надо сохранить в банк: fact_id → тексты. Только
+ * переиспользуемые и только с существующим фактом.
+ */
+export function wordingsToSave(list: Expectation[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const e of list) {
+    const f = e.fix;
+    if (f?.reason === 'wording' && f.status === 'applied' && f.scope === 'reuse' && f.fact_id && f.rewrite) {
+      out.set(f.fact_id, [...(out.get(f.fact_id) ?? []), f.rewrite]);
+    }
+  }
+  return out;
+}
+
+/** Максимум альтернативных формулировок у одного факта: больше — шум в промпте. */
+export const MAX_WORDINGS = 5;
+
+/**
+ * Добавить формулировку к факту. Без дублей (в том числе с исходным текстом
+ * факта), новые — в конец, старые вытесняются при переполнении. Возвращает
+ * null, если менять нечего.
+ */
+export function addWording(f: Fact, text: string): string[] | null {
+  const t = String(text ?? '').trim();
+  if (!t) return null;
+  const key = normalize(t);
+  const own = normalize([f.action, f.how, f.result].filter(Boolean).join(' '));
+  const cur = f.wordings ?? [];
+  if (key === own || cur.some(w => normalize(w) === key)) return null;
+  return [...cur, t].slice(-MAX_WORDINGS);
 }
 
 export function dismissFix(e: Expectation): Expectation {

@@ -431,3 +431,7 @@ table.t td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .nav-item { padding: 9px 7px; font-size: 13px; }
   .header-logout { padding-left: 6px; padding-right: 6px; }
 }
+
+/* Переиспользуемые формулировки факта */
+.wording { display: flex; align-items: center; gap: 8px; font-size: 13px; padding-left: 10px; border-left: 2px solid var(--border-accent); margin-top: 4px; }
+.wording > span { flex: 1; }

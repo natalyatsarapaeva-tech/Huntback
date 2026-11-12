@@ -63,6 +63,33 @@ const qi = fx.analysis.expectations.findIndex(e => e.fix?.reason === 'missing_fa
 const fa = await call('POST', `/opportunities/${fj.id}/fix`, { index: qi, action: 'answer', answer: 'Yes, I ran carrier tenders for 14 carriers, saving 9% on freight' });
 ok(fa.analysis.expectations[qi].fix.status === 'answered' && fa.analysis.score > fx.analysis.score, `answer: ${fx.analysis.score}% → ${fa.analysis.score}% (${fa.note})`);
 
+// «Только для этой вакансии» против «переиспользовать»: что попадает в банк фактов.
+const kr = fj; // свежий разбор — правки снова открыты
+const ka = await call('POST', `/opportunities/${kr.id}/analyse`);
+const wIdx = ka.analysis.expectations.map((e, i) => (e.fix?.reason === 'wording' && e.fix.fact_id ? i : -1)).filter(i => i >= 0);
+ok(wIdx.length >= 2, `fresh analysis: ${wIdx.length} wording fixes to choose a scope for`);
+const factsBefore = (await call('GET', '/profile')).facts;
+const [iPlace, iReuse] = wIdx;
+const fPlace = ka.analysis.expectations[iPlace].fix, fReuse = ka.analysis.expectations[iReuse].fix;
+const rp = await call('POST', `/opportunities/${kr.id}/fix`, { index: iPlace, action: 'apply', scope: 'place' });
+let bank = (await call('GET', '/profile')).facts;
+ok(rp.analysis.expectations[iPlace].fix.scope === 'place' && !(bank.find(f => f.id === fPlace.fact_id).wordings ?? []).length,
+  'only for this vacancy: fact bank untouched (' + rp.note + ')');
+const r2 = await call('POST', `/opportunities/${kr.id}/fix`, { index: iReuse, action: 'apply', scope: 'reuse' });
+bank = (await call('GET', '/profile')).facts;
+const reusedFact = bank.find(f => f.id === fReuse.fact_id);
+ok(reusedFact.wordings.includes(fReuse.rewrite), 'reuse: wording saved to the fact bank (' + r2.note + ')');
+ok(reusedFact.action === factsBefore.find(f => f.id === fReuse.fact_id).action, 'reuse: the original fact text is unchanged');
+await call('POST', `/opportunities/${kr.id}/fix`, { index: iPlace, action: 'reuse' });
+bank = (await call('GET', '/profile')).facts;
+ok((bank.find(f => f.id === fPlace.fact_id).wordings ?? []).includes(fPlace.rewrite), 'upgrade: applied-for-this-place wording saved to the bank later');
+await call('POST', `/opportunities/${kr.id}/fix`, { index: iReuse, action: 'reuse' });
+ok((await call('GET', '/profile')).facts.find(f => f.id === fReuse.fact_id).wordings.filter(w => w === fReuse.rewrite).length === 1, 'no duplicate wordings on repeat');
+const logBefore = (await (await fetch('http://127.0.0.1:8799/log')).json()).length;
+await call('POST', `/opportunities/${list.find(o => /Rheinwerk/.test(o.company)).id}/analyse`);
+const newCalls = (await (await fetch('http://127.0.0.1:8799/log')).json()).slice(logBefore);
+ok(newCalls.some(c => c.name === 'analysis' && c.alsoPhrased), 'another place’s analysis sees the reused wording in the fact bank');
+
 const rs = await call('POST', `/opportunities/${fj.id}/resume`, {}, { Accept: 'application/x-ndjson' });
 const rsEv = rs.trim().split('\n').map(l => JSON.parse(l));
 const rsDone = rsEv.at(-1).result;

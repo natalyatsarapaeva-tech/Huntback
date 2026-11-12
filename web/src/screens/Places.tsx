@@ -12,7 +12,11 @@ import {
   ReviewReport, DocActions, resumeHtml, letterHtml, resumePlainText, parseResume,
 } from '../components/docs.tsx';
 
-export type FixAction = { index?: number; action: 'apply' | 'answer' | 'dismiss' | 'apply_all'; answer?: string };
+export type FixAction = {
+  index?: number; action: 'apply' | 'answer' | 'dismiss' | 'apply_all' | 'reuse'; answer?: string;
+  /** place — только для этой вакансии; reuse — ещё и в банк фактов, для всех мест. */
+  scope?: 'place' | 'reuse';
+};
 
 const BRIDGE_LABEL: Record<string, string> = {
   transferable_metrics: 'metrics transfer across industries',
@@ -550,7 +554,7 @@ function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, on
             </div>
             <div className="card-pad">
               <Meter value={a.score} />
-              {d.potential && <PotentialBanner p={d.potential} busy={busy} onApplyAll={() => onFix({ action: 'apply_all' })} />}
+              {d.potential && <PotentialBanner p={d.potential} busy={busy} onApplyAll={scope => onFix({ action: 'apply_all', scope })} />}
               <div className="mt-16">
                 {a.expectations.map((e, i) => <ExpectationRow key={i} e={e} busy={busy} onFix={fix => onFix({ ...fix, index: i })} />)}
               </div>
@@ -705,7 +709,7 @@ function JobText({ o, busy, analysed, onSave, onFetch, onAnalyse }: {
 const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'place';
 
 /** «Сейчас 40% → 67% после формулировок → до 85% с ответами». */
-function PotentialBanner({ p, busy, onApplyAll }: { p: MatchPotential; busy: boolean; onApplyAll: () => void }) {
+function PotentialBanner({ p, busy, onApplyAll }: { p: MatchPotential; busy: boolean; onApplyAll: (scope: 'place' | 'reuse') => void }) {
   if (p.afterAnswers <= p.now) return null;
   return (
     <div className="potential mt-12">
@@ -719,9 +723,16 @@ function PotentialBanner({ p, busy, onApplyAll }: { p: MatchPotential; busy: boo
         Wording fixes reuse your confirmed facts with the same numbers.
       </p>
       {p.wordingFixes > 0 && (
-        <button className="btn btn-primary btn-sm mt-8" disabled={busy} onClick={onApplyAll}>
-          Apply {p.wordingFixes} wording fix{p.wordingFixes === 1 ? '' : 'es'}
-        </button>
+        <div className="flex gap-8 wrap mt-8">
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onApplyAll('place')}
+            title="The new wording is used in this place’s resume and letter only">
+            Apply {p.wordingFixes} for this vacancy
+          </button>
+          <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onApplyAll('reuse')}
+            title="Also saved to your fact bank as another wording of the same fact — every place and document can use it">
+            Apply and reuse everywhere
+          </button>
+        </div>
       )}
     </div>
   );
@@ -731,7 +742,16 @@ function FixBlock({ e, busy, onFix }: { e: Expectation; busy: boolean; onFix: (f
   const [answer, setAnswer] = useState('');
   const f = e.fix;
   if (!f || e.strength === 'strong' && f.status === 'open') return null;
-  if (f.status === 'applied') return <p className="small mt-8 fix-done">✓ Using your wording for this employer</p>;
+  if (f.status === 'applied') {
+    return f.scope === 'reuse'
+      ? <p className="small mt-8 fix-done">✓ Using this wording — saved to your fact bank for every place</p>
+      : (
+        <p className="small mt-8 fix-done">
+          ✓ Using this wording for this vacancy only
+          {f.fact_id && <> · <button className="link" disabled={busy} onClick={() => onFix({ action: 'reuse' })}>save to fact bank too</button></>}
+        </p>
+      );
+  }
   if (f.status === 'answered') return <p className="small mt-8 fix-done">✓ Answered{f.answer ? `: “${f.answer}”` : ''}</p>;
   if (f.status === 'dismissed') return null;
   if (f.reason === 'real_gap') {
@@ -742,10 +762,20 @@ function FixBlock({ e, busy, onFix }: { e: Expectation; busy: boolean; onFix: (f
       <div className="fix mt-8">
         <div className="section-label">Say it in their words</div>
         <p style={{ fontSize: 14 }}>“{f.rewrite}”</p>
-        <div className="flex gap-8 mt-8">
-          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onFix({ action: 'apply' })}>
-            Use this wording{f.strength_after !== e.strength ? ` · → ${f.strength_after === 'strong' ? 'covered' : 'partial'}` : ''}
+        {f.strength_after !== e.strength && (
+          <p className="small muted">Raises this expectation to {f.strength_after === 'strong' ? 'covered' : 'partial'}.</p>
+        )}
+        <div className="flex gap-8 mt-8 wrap">
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onFix({ action: 'apply', scope: 'place' })}
+            title="Used in this place’s resume and letter only">
+            Only for this vacancy
           </button>
+          {f.fact_id && (
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onFix({ action: 'apply', scope: 'reuse' })}
+              title="Saved to your fact bank as another wording of the same fact — future analyses and documents use it too">
+              Reuse — save to fact bank
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onFix({ action: 'dismiss' })}>Not accurate</button>
         </div>
       </div>
@@ -757,6 +787,7 @@ function FixBlock({ e, busy, onFix }: { e: Expectation; busy: boolean; onFix: (f
       <p style={{ fontSize: 14 }}>{f.question}</p>
       <textarea className="textarea mt-8" style={{ minHeight: 56 }} value={answer} onChange={x => setAnswer(x.target.value)}
         aria-label="Your answer" placeholder="Yes — and the number. Or “no”." />
+      <p className="small muted mt-8">An answer is a fact about you, so it goes to your fact bank and helps every place.</p>
       <div className="flex gap-8 mt-8">
         <button className="btn btn-primary btn-sm" disabled={busy || !answer.trim()}
           onClick={async () => { await onFix({ action: 'answer', answer: answer.trim() }); }}>Answer</button>

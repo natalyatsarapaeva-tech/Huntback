@@ -129,7 +129,9 @@ export interface Api {
   importBatch(text: string): Promise<BatchImportResult>;
   /** Открытые вопросы всех разборов — ответить подряд, не открывая места. */
   questions(): Promise<{ questions: OpenQuestion[] }>;
-  fixExpectation(id: string, body: { index?: number; action: 'apply' | 'answer' | 'dismiss' | 'apply_all'; answer?: string }): Promise<FixResult>;
+  fixExpectation(id: string, body: {
+    index?: number; action: 'apply' | 'answer' | 'dismiss' | 'apply_all' | 'reuse'; answer?: string; scope?: 'place' | 'reuse';
+  }): Promise<FixResult>;
   listOpportunities(): Promise<Opportunity[]>;
   getOpportunity(id: string): Promise<OpportunityDetail>;
   patchOpportunity(id: string, patch: Record<string, unknown>): Promise<{ analysis?: Analysis }>;

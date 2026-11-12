@@ -331,7 +331,7 @@ http.createServer((req, res) => {
     const prefix = body.input?.[0]?.content ?? '';
     const instr = body.input?.[1]?.content ?? '';
     const data = respond(name, prefix, instr, body);
-    log.push({ at: Date.now(), name, model: body.model, revision: instr.includes('=== REVISION ===') });
+    log.push({ at: Date.now(), name, model: body.model, revision: instr.includes('=== REVISION ==='), alsoPhrased: prefix.includes('also phrased as') });
     const delay = name === 'discovered_places' ? 600 : 150 + Math.random() * 250;
     setTimeout(() => {
       res.writeHead(200, { 'Content-Type': 'application/json' });

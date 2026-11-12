@@ -114,6 +114,7 @@ export async function listFacts(env: Env, userId: string): Promise<Fact[]> {
     scale_tags: j(r.scale_tags, []), domain_tags: j(r.domain_tags, []),
     quantified: !!r.quantified, source_hint: String(r.source_hint), confirmed: !!r.confirmed,
     review: j(r.review, null), user_input: (r.user_input as string | null) ?? null,
+    wordings: j<string[]>(r.wordings, []),
   }));
 }
 
@@ -122,8 +123,8 @@ export async function replaceFacts(env: Env, userId: string, facts: Fact[]): Pro
   for (const f of facts) {
     stmts.push(env.DB.prepare(
       `INSERT OR REPLACE INTO facts (id,user_id,company,role_title,period_from,period_to,action,how,result,
-        metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,review,user_input,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,review,user_input,created_at,wordings)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(...factBinds(userId, f)));
   }
   await env.DB.batch(stmts);
@@ -133,14 +134,15 @@ const factBinds = (userId: string, f: Fact) => [f.id, userId, f.company ?? null,
   f.period_from ?? null, f.period_to ?? null,
   f.action, f.how ?? null, f.result ?? null, f.metric_value ?? null, f.metric_unit ?? null,
   JSON.stringify(f.scale_tags), JSON.stringify(f.domain_tags), f.quantified ? 1 : 0,
-  f.source_hint, f.confirmed ? 1 : 0, f.review ? JSON.stringify(f.review) : null, f.user_input ?? null, nowIso()];
+  f.source_hint, f.confirmed ? 1 : 0, f.review ? JSON.stringify(f.review) : null, f.user_input ?? null, nowIso(),
+  JSON.stringify(f.wordings ?? [])];
 
 /** Новый факт — из ответа пользователя или из чата с коучем. */
 export async function insertFact(env: Env, userId: string, f: Fact): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO facts (id,user_id,company,role_title,period_from,period_to,action,how,result,
-      metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,review,user_input,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,review,user_input,created_at,wordings)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).bind(...factBinds(userId, f)).run();
 }
 
@@ -150,12 +152,12 @@ export async function patchFact(env: Env, userId: string, id: string, patch: Par
   const n = { ...cur, ...patch };
   await env.DB.prepare(
     `UPDATE facts SET action=?, how=?, result=?, metric_value=?, metric_unit=?, quantified=?, confirmed=?,
-       review=?, user_input=?, scale_tags=?
+       review=?, user_input=?, scale_tags=?, wordings=?
      WHERE id=? AND user_id=?`,
   ).bind(n.action, n.how ?? null, n.result ?? null, n.metric_value ?? null, n.metric_unit ?? null,
     n.metric_value != null || /\d/.test(String(n.result ?? '')) ? 1 : 0, n.confirmed ? 1 : 0,
     n.review ? JSON.stringify(n.review) : null, n.user_input ?? null, JSON.stringify(n.scale_tags ?? []),
-    id, userId).run();
+    JSON.stringify(n.wordings ?? []), id, userId).run();
 }
 
 export async function deleteFact(env: Env, userId: string, id: string): Promise<void> {

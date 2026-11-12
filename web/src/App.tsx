@@ -346,7 +346,8 @@ export function App() {
     if (r) {
       setDetail(d => (d && d.opportunity.id === id ? { ...d, analysis: r.analysis, coverage: r.coverage, potential: r.potential } : d));
       await refreshList(api);
-      if (f.action === 'answer') { const p = await api.getProfile(); setFacts(p.facts); }
+      // Ответ и «переиспользовать» меняют банк фактов — показываем его свежим.
+      if (f.action === 'answer' || f.action === 'reuse' || f.scope === 'reuse') { const p = await api.getProfile(); setFacts(p.facts); }
     }
   };
 

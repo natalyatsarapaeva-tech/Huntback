@@ -26,7 +26,7 @@ npx wrangler kv key put "csrf:sid-test" "csrf-test" --binding KV --local
 ```
 
 ```bash
-npm run e2e:smoke                    # API: 29 проверок
+npm run e2e:smoke                    # API: 35 проверок
 npm run e2e:journey -- ./shots       # браузер: пустой аккаунт → документы, клики и время
 ```
 
