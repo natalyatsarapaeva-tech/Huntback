@@ -49,6 +49,9 @@ export function sanitizeExpectation(raw: unknown): Expectation | null {
     gap_class,
     bridge: gap_class === 'soft' ? oneOfOrNull(o.bridge, BRIDGE_TYPES) : null,
     gap_answer: str(o.gap_answer, 400),
+    // Правку проверяет fixes.ts/sanitizeFix — там, где известны факты и профиль.
+    // Здесь только сохраняется сырой ответ, чтобы его было что проверять.
+    fix: (o.fix && typeof o.fix === 'object' ? o.fix : null) as Expectation['fix'],
   };
 }
 

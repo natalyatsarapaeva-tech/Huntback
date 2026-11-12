@@ -14,12 +14,15 @@
 
 import {
   auditProfile, computeScore, coverage, checkLetter, checkResume,
-  evaluateGaps, reanalyseAfterProfileChange, checkBudget, findDuplicate, companyKey,
-  estimateRunSeconds, type Demand,
+  reanalyseAfterProfileChange, checkBudget, findDuplicate, companyKey,
+  estimateRunSeconds, matchPotential, applyWordingFix, applyAllWordingFixes, dismissFix, applyAnsweredFix,
+  coachAgenda, coachProgress, factReviewQueue, defaultFactQuestion, splitJobTexts, cleanJobText,
+  type Demand, type ExpectationFix, type DocumentReview, type ResumeDoc, type CheckResult,
 } from '@huntback/core';
 import type {
   Api, Profile, Fact, Opportunity, Analysis, OpportunityDetail,
-  DocumentRecord, ImportResult, ParsedJob, UsageSummary, Me,
+  DocumentRecord, ImportResult, ParsedJob, UsageSummary, Me, DocEvent, CoachView, MasterResume,
+  CoachMessage, CoachProposal,
 } from './types.ts';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -81,6 +84,9 @@ const f = (
   source_hint: hint, confirmed, how: '',
 });
 
+const q = (question: string, why: string): Fact['review'] => ({ kind: 'question', question, rewrite: null, why, status: 'pending' });
+const rw = (action: string, how: string, result: string, why: string): Fact['review'] => ({ kind: 'rewrite', question: '', rewrite: { action, how, result }, why, status: 'pending' });
+
 let facts: Fact[] = [
   f('f1', 'Grew the operations team', 'from 8 to 25 people, 4 managers', 25, 'people', 'Head of Operations', ['team', 'managers'], 'team from 8 to 25 people'),
   f('f2', 'Cut delivery lead time', 'by 40% in two quarters', 40, '%', 'Head of Operations', [], 'delivery lead time by 40%'),
@@ -91,7 +97,16 @@ let facts: Fact[] = [
   f('f7', 'Built a demand forecasting model', 'accuracy improved by 18%', 18, '%', 'Supply Chain Analyst', [], 'accuracy improved by 18%'),
   f('f8', 'Grew four specialists into managers', 'two now run their own areas', 4, 'managers', 'Head of Operations', ['managers'], 'four specialists into managers'),
   f('f9', 'Ran operations in three countries', 'Sweden, Denmark, Finland', null, '', 'Head of Operations', ['geo'], 'operations in Sweden, Denmark and Finland'),
-];
+  f('f10', 'Built S&OP analytics', '', null, '', 'Supply Chain Analyst', [], 'S&OP analytics', false),
+  f('f11', 'Responsible for operations', 'in Sweden, Denmark and Finland', null, '', 'Head of Operations', ['geo'], 'Responsible for operations in Sweden', false),
+].map(x => ({
+  ...x,
+  review: x.id === 'f9' ? q('How many sites, warehouses or people did operations in the three countries cover?', 'Scale is the first thing a screener checks for a multi-country role.')
+    : x.id === 'f10' ? q('What decision did the S&OP analytics change, and by how much — forecast error, stock, service level?', 'Analytics without an outcome reads as a duty, not an achievement.')
+      : x.id === 'f11' ? rw('Ran operations across Sweden, Denmark and Finland', 'as Head of Operations at Nordic Freight Group', 'for the whole Nordic network', '“Responsible for” is a duty; “ran” is an achievement.')
+        : x.id === 'f4' ? rw('Kept the team through the 2023 reorganisation', 'by running it openly with the team leads', '1 person out of 25 left', 'Leads with what you did, not with what happened to you.')
+          : { kind: 'ok' as const, question: '', rewrite: null, why: '', status: 'pending' as const },
+}));
 
 // ── Демо-места ──────────────────────────────────────────────────────────────
 const opp = (o: Partial<Opportunity> & { id: string; company: string; role_title: string }): Opportunity => ({
@@ -154,17 +169,30 @@ const exp = (
   expectation: string, weight: 'must' | 'important' | 'nice', evidence: string,
   fact_id: string | null, hint: string, strength: 'strong' | 'partial' | 'gap',
   gap: 'hard' | 'soft' | null = null, bridge: Analysis['expectations'][0]['bridge'] = null, answer = '',
-) => ({ expectation, weight, evidence, fact_id, source_hint: hint, strength, gap_class: gap, bridge, gap_answer: answer });
+  fix: ExpectationFix | null = null,
+) => ({ expectation, weight, evidence, fact_id, source_hint: hint, strength, gap_class: gap, bridge, gap_answer: answer, fix });
+
+const wording = (fact_id: string, rewrite: string, after: 'strong' | 'partial' = 'strong'): ExpectationFix =>
+  ({ reason: 'wording', fact_id, rewrite, question: '', strength_after: after, status: 'open' });
+const ask = (question: string): ExpectationFix =>
+  ({ reason: 'missing_fact', fact_id: null, rewrite: '', question, strength_after: 'strong', status: 'open' });
+const realGap = (): ExpectationFix =>
+  ({ reason: 'real_gap', fact_id: null, rewrite: '', question: '', strength_after: 'gap', status: 'open' });
 
 const analyses: Record<string, Analysis> = {
   o1: {
     expectations: [
       exp('Running operations across several Nordic countries', 'must', 'Operations in Sweden, Denmark and Finland at Nordic Freight', 'f9', 'operations in Sweden, Denmark and Finland', 'strong'),
-      exp('A team of 40+ with managers reporting in', 'must', 'Team of 25, 4 managers', 'f1', 'team from 8 to 25 people', 'partial', 'soft', 'trajectory', 'Tripled the team in three years and manages managers, not just specialists'),
+      exp('A team of 40+ with managers reporting in', 'must', 'Team of 25, 4 managers', 'f1', 'team from 8 to 25 people', 'partial', 'soft', 'trajectory', 'Tripled the team in three years and manages managers, not just specialists',
+        ask('Beyond your 25 direct and indirect reports, did you lead anyone else day to day — contractors, 3PL staff, temporary warehouse crews? How many at peak?')),
       exp('Measurable operating cost reduction', 'must', 'Single WMS, saving EUR 620K a year', 'f3', 'single WMS, saving EUR 620K', 'strong'),
+      exp('Owning network KPIs: on-time delivery and cost per parcel', 'must', 'Late shipments and lead time — but not named as network KPIs', 'f6', 'late shipments from 12% to 3%', 'gap', 'soft', 'transferable_metrics', '',
+        wording('f6', 'Owned on-time delivery as a network KPI: cut late shipments from 12% to 3%')),
       exp('Experience scaling a network fast', 'important', 'Two sites at planned volume in 5 months instead of 9', 'f5', 'planned volume in 5 months', 'strong'),
-      exp('Working-level Swedish', 'important', 'Swedish B1', null, '', 'partial', 'soft', 'analogous_tools', 'B1 plus working English; operations meetings at Nordic Freight ran in English'),
-      exp('Last-mile experience', 'nice', 'Freight logistics experience, not last mile', null, '', 'gap', 'soft', 'transferable_metrics', 'Lead time and late-shipment metrics read the same in both models'),
+      exp('Working-level Swedish', 'important', 'Swedish B1', null, '', 'partial', 'soft', 'analogous_tools', 'B1 plus working English; operations meetings at Nordic Freight ran in English',
+        realGap()),
+      exp('Last-mile experience', 'nice', 'Freight logistics experience, not last mile', null, '', 'gap', 'soft', 'transferable_metrics', 'Lead time and late-shipment metrics read the same in both models',
+        wording('f2', 'Cut end-to-end delivery lead time, including the final delivery leg, by 40% in two quarters', 'partial')),
     ],
     blockers: [], score: 0,
     uvp: 'The only candidate with proven experience running operations in three Nordic countries at once and a demonstrated 40% cut in delivery lead time — exactly the task that comes with entering Denmark.',
@@ -173,11 +201,14 @@ const analyses: Record<string, Analysis> = {
   },
   o2: {
     expectations: [
-      exp('Fluent German', 'must', 'No German in the profile', null, '', 'gap', 'hard'),
-      exp('Managing a team of 60+', 'must', 'Team of 25, 4 managers', 'f1', 'team from 8 to 25 people', 'partial', 'soft', 'trajectory', 'Team growth trajectory and managing managers'),
-      exp('E-commerce fulfilment experience', 'must', 'Freight and warehouse logistics experience', 'f3', 'single WMS, saving EUR 620K', 'partial', 'soft', 'transferable_metrics', 'WMS and lead time metrics transfer between models'),
+      exp('Fluent German', 'must', 'No German in the profile', null, '', 'gap', 'hard', null, '', realGap()),
+      exp('Managing a team of 60+', 'must', 'Team of 25, 4 managers', 'f1', 'team from 8 to 25 people', 'partial', 'soft', 'trajectory', 'Team growth trajectory and managing managers',
+        ask('Have you ever had 60 or more people in your organisation, including indirect reports or seasonal staff?')),
+      exp('E-commerce fulfilment experience', 'must', 'Freight and warehouse logistics experience', 'f3', 'single WMS, saving EUR 620K', 'partial', 'soft', 'transferable_metrics', 'WMS and lead time metrics transfer between models',
+        wording('f3', 'Consolidated fulfilment warehouses onto a single WMS, saving EUR 620K a year', 'strong')),
       exp('Warehouse process optimisation', 'important', 'Single WMS, saving EUR 620K a year', 'f3', 'single WMS, saving EUR 620K', 'strong'),
       exp('Working in a matrix structure', 'nice', 'Three countries, four managers', 'f8', 'four specialists into managers', 'strong'),
+
     ],
     blockers: [], score: 0,
     uvp: 'A warehouse transformation with proven savings of EUR 620K a year and experience launching sites nearly twice as fast as planned.',
@@ -225,13 +256,13 @@ export const mockApi: Api = {
       documents = {};
       for (const k of Object.keys(analyses)) delete analyses[k];
     }
-    if (scope === 'all' || scope === 'profile') resetToBlankProfile();
+    if (scope === 'all' || scope === 'profile') { resetToBlankProfile(); coachMessages = []; coachProposals = []; coachSkipped = []; masterResume = null; }
     if (scope === 'all' || scope === 'budget') usageLog = [];
   },
 
   async getProfile() {
     await delay(140);
-    return { profile, audit: auditProfile(profile, facts), facts };
+    return { profile, audit: auditProfile(profile, facts), facts: factReviewQueue(facts), master_resume: masterResume };
   },
 
   async saveProfile(patch) {
@@ -271,6 +302,7 @@ export const mockApi: Api = {
     return {
       opportunity: o, analysis, documents: documents[id] ?? [],
       coverage: analysis ? coverage(analysis.expectations) : null,
+      potential: analysis ? matchPotential(analysis.expectations) : null,
     };
   },
 
@@ -334,15 +366,53 @@ export const mockApi: Api = {
 
   async analyse(id) {
     await delay(2200);
-    const base = analyses[id] ?? analyses.o1;
+    // Копия, а не общий объект: правки одного места не должны менять другое.
+    const base = structuredClone(analyses[id] ?? analyses.o1);
     analyses[id] = base;
     const a = withBlockers(id, base);
     opportunities = opportunities.map(o => (o.id === id ? { ...o, status: 'analysed', score: a.score } : o));
-    return { analysis: a, coverage: coverage(a.expectations) };
+    return { analysis: a, coverage: coverage(a.expectations), potential: matchPotential(a.expectations) };
   },
 
-  async makeResume(id) {
-    await delay(1800);
+  async fixExpectation(id, b) {
+    await delay(b.action === 'answer' ? 1400 : 200);
+    const a = analyses[id];
+    if (!a) throw new Error('Analyse this place’s expectations first');
+    let note = '';
+    if (b.action === 'apply_all') {
+      const r = applyAllWordingFixes(a.expectations);
+      a.expectations = r.expectations;
+      note = `${r.applied} wording fix${r.applied === 1 ? '' : 'es'} applied`;
+    } else {
+      const i = Number(b.index);
+      const e = a.expectations[i];
+      if (b.action === 'apply') a.expectations[i] = applyWordingFix(e);
+      if (b.action === 'dismiss') a.expectations[i] = dismissFix(e);
+      if (b.action === 'answer') {
+        const answer = String(b.answer ?? '').trim();
+        // Демо: ответ «нет» оставляет гэп, иначе ответ становится фактом.
+        if (/^(no|nope|never|нет)\b/i.test(answer)) {
+          a.expectations[i] = { ...e, fix: e.fix ? { ...e.fix, status: 'answered', answer } : null };
+          note = 'The answer doesn’t cover this expectation — it stays a gap';
+        } else {
+          const nf: Fact = {
+            id: 'n' + Date.now(), action: answer.length > 90 ? answer.slice(0, 90) + '…' : answer, result: '',
+            metric_value: null, metric_unit: null, scale_tags: [], domain_tags: [], quantified: /\d/.test(answer),
+            source_hint: answer.slice(0, 120), confirmed: true, user_input: answer, review: null,
+          };
+          facts = [...facts, nf];
+          a.expectations[i] = applyAnsweredFix(e, answer, { strength: /\d/.test(answer) ? 'strong' : 'partial', evidence: answer, fact_id: nf.id });
+          note = 'Added to your fact bank and counted for this place';
+        }
+      }
+    }
+    const w = withBlockers(id, a);
+    opportunities = opportunities.map(o => (o.id === id ? { ...o, score: w.score } : o));
+    return { analysis: w, coverage: coverage(w.expectations), potential: matchPotential(w.expectations), note };
+  },
+
+  async makeResume(id, onEvent) {
+    const review = await simulateReview('resume', onEvent);
     const o = opportunities.find(x => x.id === id)!;
     const doc = {
       headline: o.role_title,
@@ -383,14 +453,15 @@ export const mockApi: Api = {
     const rec: DocumentRecord = {
       id: 'd-' + id + '-r', kind: 'resume', version: 1, subject: null,
       body: JSON.stringify(doc), edited_by_user: false, format_variant: doc.format_variant,
-      facts_used: doc.facts_used, checks, created_at: new Date().toISOString(),
+      facts_used: doc.facts_used, checks, created_at: new Date().toISOString(), review,
     };
     documents[id] = [...(documents[id] ?? []).filter(d => d.kind !== 'resume'), rec];
-    return { doc, checks };
+    opportunities = opportunities.map(x => (x.id === id ? { ...x, status: 'drafted' } : x));
+    return { id: rec.id, doc, checks, review };
   },
 
-  async makeLetter(id) {
-    await delay(1900);
+  async makeLetter(id, _tone, onEvent) {
+    const review = await simulateReview('letter', onEvent);
     const o = opportunities.find(x => x.id === id)!;
     const body = o.kind === 'hypothesis'
       ? `In July 2026 you launched a second line after the fire at your main plant. In my experience a launch like that breaks planning for a quarter: production reaches volume before shipping is rebuilt around it, and late deliveries appear where there were none before.
@@ -419,10 +490,127 @@ Would you be open to a twenty-minute call in the week of 15 September?`;
     const rec: DocumentRecord = {
       id: 'd-' + id + '-l', kind: 'letter', version: 1, subject: doc.subject,
       body: doc.body, edited_by_user: false, format_variant: null,
-      facts_used: ['f2', 'f3', 'f1'], checks, created_at: new Date().toISOString(),
+      facts_used: ['f2', 'f3', 'f1'], checks, created_at: new Date().toISOString(), review,
     };
     documents[id] = [...(documents[id] ?? []).filter(d => d.kind !== 'letter'), rec];
-    return { doc, checks };
+    opportunities = opportunities.map(x => (x.id === id ? { ...x, status: 'drafted' } : x));
+    return { id: rec.id, doc, checks, review };
+  },
+
+  async answerFact(id, answer) {
+    await delay(900);
+    const cur = facts.find(x => x.id === id);
+    if (!cur) throw new Error('Fact not found');
+    const num = answer.match(/\d[\d.,]*\s*(%|people|sites|EUR|K|M)?/i)?.[0] ?? null;
+    const next: Fact = {
+      ...cur,
+      result: num ? [cur.result, answer].filter(Boolean).join('; ') : cur.result,
+      metric_value: num ? Number(num.replace(/[^\d.]/g, '')) || cur.metric_value || null : cur.metric_value,
+      metric_unit: num ? (num.replace(/[\d.,\s]/g, '') || cur.metric_unit || '') : cur.metric_unit,
+      quantified: cur.quantified || !!num,
+      user_input: [cur.user_input, answer].filter(Boolean).join('\n'),
+      confirmed: true,
+      review: cur.review ? { ...cur.review, status: 'answered' } : null,
+    };
+    facts = facts.map(x => (x.id === id ? next : x));
+    return { fact: next };
+  },
+
+  async coach() {
+    await delay(150);
+    return coachView();
+  },
+
+  async coachMessage(text, topicId) {
+    await delay(text ? 1300 : 700);
+    const agenda = coachAgenda(profile, facts, { skipped: coachSkipped });
+    const current = topicId ?? [...coachMessages].reverse().find(m => m.role === 'coach')?.topic_id ?? agenda[0]?.id;
+    const now = new Date().toISOString();
+    if (text) {
+      coachMessages.push({ role: 'user', text, at: now, topic_id: current });
+      const topic = agenda.find(t => t.id === current);
+      // Демо-коуч честен так же, как настоящий: факт — только из числа в словах пользователя.
+      if (topic && /\d/.test(text)) {
+        if (topic.kind === 'fact_number' && topic.fact_id) {
+          const fct = facts.find(x => x.id === topic.fact_id);
+          coachProposals.push({ id: 'p' + Date.now(), kind: 'update_fact', status: 'open', fact_id: topic.fact_id,
+            label: `Update “${fct?.action}” → ${text}`, fact: { result: text, quantified: true, user_input: text } });
+        } else if (topic.kind === 'scale') {
+          const n = Number(text.match(/\d+/)?.[0]);
+          coachProposals.push({ id: 'p' + Date.now(), kind: 'profile', status: 'open', label: `Profile: team ${n}`,
+            profile: { scale: { ...(profile.scale ?? {}), team_max: n } } });
+        } else {
+          coachProposals.push({ id: 'p' + Date.now(), kind: 'new_fact', status: 'open', label: text,
+            fact: { action: text, result: '', quantified: true, source_hint: text.slice(0, 120), user_input: text, scale_tags: [], domain_tags: [] } });
+        }
+      }
+      if (current && !coachSkipped.includes(current)) coachSkipped.push(current);
+    }
+    const next = coachAgenda(profile, facts, { skipped: coachSkipped })[0];
+    coachMessages.push({ role: 'coach', text: coachQuestion(next, !!text), at: now, topic_id: next?.id });
+    return coachView();
+  },
+
+  async coachSkip(topicId) {
+    await delay(100);
+    if (!coachSkipped.includes(topicId)) coachSkipped.push(topicId);
+    return coachView();
+  },
+
+  async coachProposal(id, action) {
+    await delay(250);
+    const prop = coachProposals.find(x => x.id === id);
+    if (prop && prop.status === 'open') {
+      if (action === 'apply') {
+        if (prop.kind === 'new_fact' && prop.fact) {
+          facts = [...facts, { id: 'c' + Date.now(), action: String(prop.fact.action), result: prop.fact.result, metric_value: null,
+            metric_unit: null, scale_tags: [], domain_tags: [], quantified: !!prop.fact.quantified,
+            source_hint: String(prop.fact.source_hint ?? ''), confirmed: true, user_input: prop.fact.user_input, review: null }];
+        }
+        if (prop.kind === 'update_fact' && prop.fact_id) {
+          facts = facts.map(x => (x.id === prop.fact_id ? { ...x, ...prop.fact, confirmed: true } : x));
+        }
+        if (prop.kind === 'profile' && prop.profile) profile = { ...profile, ...prop.profile };
+      }
+      prop.status = action === 'apply' ? 'applied' : 'dismissed';
+    }
+    return { ...coachView(), profile, facts: factReviewQueue(facts) };
+  },
+
+  async coachReset() {
+    coachMessages = []; coachProposals = []; coachSkipped = [];
+    return coachView();
+  },
+
+  async buildMasterResume(onEvent) {
+    const review = await simulateReview('resume', onEvent);
+    const doc = masterDoc();
+    const checks = checkResume(doc, { language: 'en', facts, profile, analysis: null });
+    masterResume = { doc, checks, review, created_at: new Date().toISOString() };
+    return masterResume;
+  },
+
+  async importBatch(text) {
+    await delay(1600);
+    const parts = splitJobTexts(text);
+    if (!parts.length) throw new Error('Paste at least one job posting (200+ characters). Separate several with a line of ---');
+    return {
+      results: parts.map((t, index) => {
+        const lines = cleanJobText(t).split('\n').map(l => l.trim()).filter(Boolean);
+        const role = lines[0]?.slice(0, 80) ?? 'Role';
+        const company = (lines[1]?.split(/[·|,]/)[0] ?? 'Company').trim().slice(0, 60);
+        const dup = findDuplicate({ company, role_title: role },
+          opportunities.map(o => ({ id: o.id, company_key: o.company_key, role_title: o.role_title })));
+        if (dup) {
+          opportunities = opportunities.map(o => (o.id === dup ? { ...o, jd_text: t, kind: 'vacancy' } : o));
+          return { index, ok: true as const, id: dup, merged: true, company, role_title: role };
+        }
+        const id = 'o' + (opportunities.length + 1) + '-' + index;
+        opportunities = [opp({ id, company, role_title: role, kind: 'vacancy', origin: 'manual_text', jd_text: t, status: 'new', country: 'Sweden' }), ...opportunities];
+        demands[id] = { country: 'Sweden' };
+        return { index, ok: true as const, id, merged: false, company, role_title: role };
+      }),
+    };
   },
 
   async saveDocument(id, patch) {
@@ -493,3 +681,127 @@ export function resetToBlankProfile(): void {
 
 /** Демо-профиль без немецкого — блокер на месте o2 виден сразу. */
 export function demoProfile(): Profile { return profile; }
+
+// ── Демо: коуч, ревью, мастер-резюме ────────────────────────────────────────
+let coachMessages: CoachMessage[] = [];
+let coachProposals: CoachProposal[] = [];
+let coachSkipped: string[] = [];
+let masterResume: MasterResume | null = null;
+
+function coachView(): CoachView {
+  return {
+    messages: coachMessages, proposals: coachProposals,
+    agenda: coachAgenda(profile, facts, { skipped: coachSkipped }), progress: coachProgress(profile, facts),
+  };
+}
+
+/** Вопрос демо-коуча по теме повестки — та же повестка, что у настоящего. */
+function coachQuestion(t: ReturnType<typeof coachAgenda>[number] | undefined, answered: boolean): string {
+  const ack = answered ? 'Got it — I’ve turned that into a suggestion below; apply it if it’s accurate. ' : 'Let’s make your resume screen-proof, one question at a time. ';
+  if (!t) return ack + 'That covers it.';
+  switch (t.kind) {
+    case 'review_facts': return ack + 'First, a few facts from your resume are still unconfirmed — open “Review facts” and go through them; it takes about two minutes.';
+    case 'fact_number': {
+      const fct = facts.find(x => x.id === t.fact_id);
+      return ack + `About “${fct?.action ?? t.title}”: ${fct ? defaultFactQuestion(fct) : 'what was the measurable result?'}`;
+    }
+    case 'role_achievements': return ack + `In your role ${t.role}, what was the single biggest result — what changed, by how much, compared with what?`;
+    case 'scale': return ack + 'What was the largest team you were responsible for, direct and indirect, and how many of them were managers?';
+    case 'languages': return ack + 'Which languages do you work in, and at what CEFR level (A1–C2)?';
+    case 'work_auth': return ack + 'Where can you work without sponsorship?';
+    case 'gap_reason': return ack + `What did you do during ${t.title.replace('The gap ', '')}? One plain sentence is enough.`;
+    case 'relocation': return ack + 'Are you open to relocating, and would you need a relocation package?';
+    case 'perimeter': return ack + 'Which 2–4 role titles are you targeting, and where?';
+    case 'master_resume': return ack + 'Your profile covers what a screener looks for. Build the master resume — it goes through two review rounds before you see it.';
+  }
+}
+
+const DEMO_REVIEWS: Record<'resume' | 'letter', DocumentReview> = {
+  resume: {
+    rewrites: 1,
+    rounds: [
+      {
+        round: 1, verdict: 'revise', code_issues: ['[ai_isms] Reads as machine-written: “spearheaded”'],
+        issues: [
+          { type: 'factual', severity: 'high', quote: 'Led a 30-person operations organisation', problem: 'The fact bank says 25 people, not 30', fix: 'Grew the operations team from 8 to 25 people, including 4 managers' },
+          { type: 'duplication', severity: 'high', quote: 'Cut delivery lead time by 40%', problem: 'The 40% lead-time cut appears in the summary and in two bullets', fix: 'Keep it in the first Nordic Freight bullet only; use the WMS saving in the summary' },
+          { type: 'ai_ism', severity: 'low', quote: 'Spearheaded a seamless WMS migration', problem: '“Spearheaded” and “seamless” read as generated', fix: 'Moved the warehouse network to a single WMS — saving EUR 620K a year' },
+        ],
+      },
+      { round: 2, verdict: 'pass', code_issues: [], issues: [] },
+    ],
+  },
+  letter: {
+    rewrites: 2,
+    rounds: [
+      {
+        round: 1, verdict: 'revise', code_issues: ['[stoplist] Stop-list phrase: “i am excited to apply”'],
+        issues: [
+          { type: 'cliche', severity: 'low', quote: 'I am excited to apply', problem: 'Banned opening, says nothing', fix: 'Open with the Denmark expansion and the three-country fact' },
+          { type: 'far_fetched', severity: 'high', quote: 'your culture of innovation', problem: 'Nothing in the signal or posting says this', fix: 'Remove; talk about the expansion instead' },
+        ],
+      },
+      {
+        round: 2, verdict: 'revise', code_issues: [],
+        issues: [
+          { type: 'duplication', severity: 'high', quote: 'cut delivery lead time by 40%', problem: 'The same number in the first and the fourth paragraph', fix: 'Keep it in the first paragraph only' },
+        ],
+      },
+    ],
+  },
+};
+
+/** Тот же поток событий, что присылает воркер: черновик, два ревью, переписывания. */
+async function simulateReview(kind: 'resume' | 'letter', onEvent?: (e: DocEvent) => void): Promise<DocumentReview> {
+  const r = DEMO_REVIEWS[kind];
+  const say = onEvent ?? (() => {});
+  say({ stage: 'draft', message: 'Writing the first draft' });
+  await delay(900);
+  for (const round of r.rounds) {
+    say({ stage: 'review', round: round.round, message: `Reviewer, round ${round.round}: checking facts, repeats, clichés and AI-isms` });
+    await delay(800);
+    const n = round.issues.length + round.code_issues.length;
+    say({ stage: 'review', round: round.round, issues: n, message: `Reviewer, round ${round.round}: ${n} remark${n === 1 ? '' : 's'}` });
+    if (n) {
+      say({ stage: 'revise', round: round.round, message: `Rewriting to address ${n} remark${n === 1 ? '' : 's'}` });
+      await delay(900);
+    }
+  }
+  say({ stage: 'final', message: 'Final checks' });
+  await delay(200);
+  return r;
+}
+
+function masterDoc(): ResumeDoc {
+  const confirmed = facts.filter(x => x.confirmed);
+  return {
+    headline: profile.perimeter.split(';')[0]?.trim() || 'Operations leader',
+    summary: [
+      'Operations leader who ran a three-country Nordic network and cut delivery lead time by 40% in two quarters.',
+      'Grew teams from 8 to 25 people, including 4 managers; budget EUR 4.2M.',
+    ],
+    summary_support: [0, 2],
+    facts_line: 'EU work permit — no sponsorship needed · English C1, Swedish B1, Russian C2 · open to relocation · linkedin.com/in/mkovaleva',
+    competencies: ['S&OP', 'WMS', 'Network planning', 'Budgeting', 'Lean', 'Site launches', 'Operations KPIs'],
+    experience: [
+      {
+        company: 'Nordic Freight Group', role_title: 'Head of Operations', period_from: '2021-02', period_to: null,
+        context_line: 'Team of 25, 4 managers, budget EUR 4.2M, 3 countries',
+        bullets: confirmed.filter(x => x.role_title === 'Head of Operations').slice(0, 5)
+          .map(x => [x.action, x.result].filter(Boolean).join(' — ')),
+        condensed: false,
+      },
+      {
+        company: 'Baltic Logistics', role_title: 'Operations Manager', period_from: '2017-01', period_to: '2021-01',
+        context_line: 'Team of 8',
+        bullets: confirmed.filter(x => x.role_title === 'Operations Manager').map(x => [x.action, x.result].filter(Boolean).join(' — ')),
+        condensed: false,
+      },
+    ],
+    education: ['MSc Industrial Engineering, KTH, 2014'],
+    format_variant: 'intl', language: 'en',
+    facts_used: confirmed.map(x => x.id).slice(0, 8),
+  };
+}
+
+export type { CheckResult };

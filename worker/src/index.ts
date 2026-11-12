@@ -10,13 +10,20 @@ import {
   checkBudget, checkRunLimit, findDuplicate, reanalyseAfterProfileChange,
   computeScore, coverage, auditProfile, checkResume, checkLetter,
   estimateRunSeconds, describeAngleOutcomes, OPPORTUNITY_LABELS, jobUrlKey, canonicalJobUrl, splitJobTexts, companyKey,
-  type RunEvent, type Demand, type Opportunity, type OpportunityLabel,
+  type RunEvent, type Demand, type Opportunity, type OpportunityLabel, type Analysis, type Profile,
+  type Fact, type FormatVariant, type CoachProposal,
+  matchPotential, applyAllWordingFixes, applyWordingFix, dismissFix, applyAnsweredFix,
+  coachAgenda, coachProgress, factReviewQueue,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
 import { authStart, authCallback, logout, requireSession } from './auth.ts';
 import * as db from './store.ts';
 import { PROMPT_META, DEFAULT_PROMPTS } from './prompts.ts';
 import { mapWithConcurrency } from './ai.ts';
+import {
+  type DocEvent, writeReviewed, runReview, resumeForReview, letterForReview, reviewTargetFor,
+  runRefineFact, runRescore, runCoachTurn,
+} from './improve.ts';
 import {
   type Ctx, runAudit, runAnalyse, runIngest, runResume, runLetter, runSwapTest,
   runDiscover, discoverAngles, passesFor, fetchJobPage, formatForCountry, type SearchMode,
@@ -84,6 +91,7 @@ async function body<T>(request: Request): Promise<T> {
 }
 
 async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext): Promise<Response> {
+  const execCtx = ctx;
   const p = url.pathname;
   const m = request.method;
 
@@ -110,10 +118,10 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
 
   // ── Профиль (§8.2) ───────────────────────────────────────────────────────
   if (p === '/api/profile' && m === 'GET') {
-    const [profile, audit, facts] = await Promise.all([
-      db.getProfile(env, userId), db.getAudit(env, userId), db.listFacts(env, userId),
+    const [profile, audit, facts, master] = await Promise.all([
+      db.getProfile(env, userId), db.getAudit(env, userId), db.listFacts(env, userId), db.getMasterResume(env, userId),
     ]);
-    return json({ profile, audit, facts });
+    return json({ profile, audit, facts: factReviewQueue(facts), master_resume: master });
   }
   if (p === '/api/profile' && m === 'PUT') {
     await db.saveProfile(env, userId, await body(request));
@@ -140,10 +148,116 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     return json({ audit: res.report, facts: res.facts, degraded: res.degraded });
   }
   if (p === '/api/profile/facts' && m === 'GET') return json(await db.listFacts(env, userId));
+  // Ответ на наводящий вопрос разбора фактов: модель переписывает факт, ядро
+  // проверяет, что чисел не прибавилось, факт становится подтверждённым.
+  const answerMatch = p.match(/^\/api\/profile\/facts\/([\w-]+)\/answer$/);
+  if (answerMatch && m === 'POST') {
+    const ctx = await ctxFor(env, userId);
+    await assertBudget(env, userId, ctx);
+    const b = await body<{ answer?: string }>(request);
+    const answer = String(b.answer ?? '').trim();
+    if (!answer) throw new ApiError('bad_request', 'Type an answer first', 400);
+    const [profile, facts] = await Promise.all([db.getProfile(env, userId), db.listFacts(env, userId)]);
+    const f = facts.find(x => x.id === answerMatch[1]);
+    if (!f) throw new ApiError('not_found', 'Fact not found', 404);
+    let patch: Partial<Fact>;
+    try {
+      patch = await runRefineFact(ctx, profile, facts, f, answer);
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+      throw new ApiError('refine_unbacked', e instanceof Error ? e.message : String(e), 422);
+    }
+    await db.patchFact(env, userId, f.id, patch);
+    const fact = (await db.listFacts(env, userId)).find(x => x.id === f.id);
+    return json({ fact });
+  }
   if (p.startsWith('/api/profile/facts/')) {
     const id = p.split('/').pop()!;
     if (m === 'PATCH') { await db.patchFact(env, userId, id, await body(request)); return json({ ok: true }); }
     if (m === 'DELETE') { await db.deleteFact(env, userId, id); return json({ ok: true }); }
+  }
+
+  // ── Мастер-резюме: базовое, под периметр, через тот же цикл ревью ─────────
+  if (p === '/api/profile/master-resume' && m === 'POST') {
+    const ctx = await ctxFor(env, userId);
+    await assertBudget(env, userId, ctx);
+    const [profile, facts] = await Promise.all([db.getProfile(env, userId), db.listFacts(env, userId)]);
+    if (!facts.some(f => f.confirmed)) throw new ApiError('no_facts', 'Confirm at least a few facts first — the resume is built only from them', 409);
+    const work = async (send: (e: DocEvent) => void) => {
+      const r = await generateResume(ctx, profile, facts, masterOpportunity(profile), emptyAnalysis(), {}, send);
+      const master = { doc: r.doc, checks: r.checks, review: r.review, created_at: new Date().toISOString() };
+      await db.saveMasterResume(env, userId, master);
+      return master;
+    };
+    return wantsStream(request) ? streamOperation(execCtx, work) : json(await work(() => {}));
+  }
+
+  // ── Коуч резюме ──────────────────────────────────────────────────────────
+  if (p.startsWith('/api/coach')) {
+    const [profile, facts, state] = await Promise.all([
+      db.getProfile(env, userId), db.listFacts(env, userId), db.getCoach(env, userId),
+    ]);
+    const agenda = () => coachAgenda(profile, facts, { skipped: state.skipped });
+    const view = (extra: Record<string, unknown> = {}) => json({
+      messages: state.messages, proposals: state.proposals,
+      agenda: agenda(), progress: coachProgress(profile, facts), ...extra,
+    });
+
+    if (p === '/api/coach' && m === 'GET') return view();
+
+    if (p === '/api/coach/message' && m === 'POST') {
+      const ctx = await ctxFor(env, userId);
+      await assertBudget(env, userId, ctx);
+      const b = await body<{ text?: string; topic_id?: string }>(request);
+      const text = String(b.text ?? '').trim().slice(0, 4000);
+      const current = b.topic_id ?? [...state.messages].reverse().find(x => x.role === 'coach')?.topic_id ?? null;
+      const turn = await runCoachTurn(ctx, profile, facts, state.messages, text, agenda(), current);
+      const now = new Date().toISOString();
+      if (text) state.messages.push({ role: 'user', text, at: now, topic_id: current ?? undefined });
+      if (turn.topic_done && current && current !== turn.topic_id && !state.skipped.includes(current)) {
+        // Тема закрыта ответом — дальше по повестке; если ответ дал факт, она
+        // закроется и сама при пересчёте, но «не знаю» тоже закрывает тему.
+        state.skipped.push(current);
+      }
+      state.messages.push({ role: 'coach', text: turn.reply, at: now, topic_id: turn.topic_id });
+      state.proposals.push(...turn.proposals);
+      await db.saveCoach(env, userId, state);
+      return view({ new_proposals: turn.proposals.map(x => x.id) });
+    }
+
+    if (p === '/api/coach/skip' && m === 'POST') {
+      const b = await body<{ topic_id?: string }>(request);
+      if (b.topic_id && !state.skipped.includes(b.topic_id)) state.skipped.push(b.topic_id);
+      await db.saveCoach(env, userId, state);
+      return view();
+    }
+
+    if (p === '/api/coach/reset' && m === 'POST') {
+      await db.saveCoach(env, userId, { messages: [], proposals: [], skipped: [] });
+      state.messages = []; state.proposals = []; state.skipped = [];
+      return view();
+    }
+
+    const propMatch = p.match(/^\/api\/coach\/proposals\/([\w-]+)$/);
+    if (propMatch && m === 'POST') {
+      const b = await body<{ action?: 'apply' | 'dismiss' }>(request);
+      const prop = state.proposals.find(x => x.id === propMatch[1]);
+      if (!prop) throw new ApiError('not_found', 'Suggestion not found', 404);
+      if (prop.status !== 'open') return view();
+      if (b.action === 'dismiss') prop.status = 'dismissed';
+      else {
+        await applyProposal(env, userId, profile, prop);
+        prop.status = 'applied';
+      }
+      await db.saveCoach(env, userId, state);
+      // Повестка зависит от фактов и профиля — перечитываем их.
+      const [p2, f2] = await Promise.all([db.getProfile(env, userId), db.listFacts(env, userId)]);
+      return json({
+        messages: state.messages, proposals: state.proposals,
+        agenda: coachAgenda(p2, f2, { skipped: state.skipped }), progress: coachProgress(p2, f2),
+        profile: p2, facts: factReviewQueue(f2),
+      });
+    }
   }
 
   // ── Места (§8.3) ─────────────────────────────────────────────────────────
@@ -249,6 +363,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       return json({
         opportunity: opp, analysis, documents,
         coverage: analysis ? coverage(analysis.expectations) : null,
+        potential: analysis ? matchPotential(analysis.expectations) : null,
       });
     }
     if (!action && m === 'PATCH') {
@@ -293,7 +408,52 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
         status: 'analysed', score: res.analysis.score,
         hard_blocker: res.analysis.blockers.length ? res.analysis.blockers : null,
       });
-      return json({ analysis: res.analysis, coverage: coverage(res.analysis.expectations), degraded: res.degraded });
+      return json({
+        analysis: res.analysis, coverage: coverage(res.analysis.expectations),
+        potential: matchPotential(res.analysis.expectations), degraded: res.degraded,
+      });
+    }
+
+    // Поднять совпадение: принять формулировку, ответить на вопрос, отклонить.
+    if (action === '/fix' && m === 'POST') {
+      const stored = await db.getAnalysis(env, userId, id);
+      if (!stored) throw new ApiError('no_analysis', 'Analyse this place’s expectations first', 409);
+      const b = await body<{ index?: number; action?: 'apply' | 'answer' | 'dismiss' | 'apply_all'; answer?: string }>(request);
+      const a = stored.analysis;
+      let note = '';
+      if (b.action === 'apply_all') {
+        const r = applyAllWordingFixes(a.expectations);
+        a.expectations = r.expectations;
+        note = `${r.applied} wording fix${r.applied === 1 ? '' : 'es'} applied`;
+      } else {
+        const i = Number(b.index);
+        const e = a.expectations[i];
+        if (!e || !e.fix) throw new ApiError('bad_request', 'No fix for this expectation', 400);
+        if (b.action === 'apply') a.expectations[i] = applyWordingFix(e);
+        else if (b.action === 'dismiss') a.expectations[i] = dismissFix(e);
+        else if (b.action === 'answer') {
+          const answer = String(b.answer ?? '').trim();
+          if (!answer) throw new ApiError('bad_request', 'Type an answer first', 400);
+          const ctx = await ctxFor(env, userId);
+          await assertBudget(env, userId, ctx);
+          const [profile, facts] = await Promise.all([db.getProfile(env, userId), db.listFacts(env, userId)]);
+          const verdict = await runRescore(ctx, profile, facts, opp, e, answer);
+          if (verdict.fact) await db.insertFact(env, userId, verdict.fact);
+          a.expectations[i] = verdict.relevant
+            ? applyAnsweredFix(e, answer, { strength: verdict.strength, evidence: verdict.evidence, fact_id: verdict.fact?.id ?? null })
+            : { ...e, fix: { ...e.fix, status: 'answered', answer } };
+          note = verdict.relevant
+            ? (verdict.fact ? 'Added to your fact bank and counted for this place' : 'Counted for this place')
+            : 'The answer doesn’t cover this expectation — it stays a gap';
+        } else throw new ApiError('bad_request', 'Unknown action', 400);
+      }
+      await db.saveAnalysis(env, userId, id, a, stored.demand, 'fix');
+      const score = computeScore(a.expectations);
+      await db.patchOpportunity(env, userId, id, { score });
+      return json({
+        analysis: { ...a, score }, coverage: coverage(a.expectations),
+        potential: matchPotential(a.expectations), note,
+      });
     }
 
     if ((action === '/resume' || action === '/letter') && m === 'POST') {
@@ -303,28 +463,35 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       if (!stored) throw new ApiError('no_analysis', 'Analyse this place’s expectations first', 409);
       const [profile, facts] = await Promise.all([db.getProfile(env, userId), db.listFacts(env, userId)]);
       const analysis = { ...stored.analysis, score: computeScore(stored.analysis.expectations) };
-      const opts = await body<Record<string, never>>(request);
+      const opts = await body<{ format_variant?: FormatVariant; pages?: 1 | 2; tone?: 'neutral' | 'direct' | 'warm' }>(request);
 
-      if (action === '/resume') {
-        const r = await runResume(ctx, profile, facts, opp, analysis, opts);
+      const work = async (send: (e: DocEvent) => void) => {
+        if (action === '/resume') {
+          const r = await generateResume(ctx, profile, facts, opp, analysis, opts, send);
+          const docId = await db.saveDocument(env, userId, id, {
+            kind: 'resume', body: JSON.stringify(r.doc), format_variant: r.doc.format_variant,
+            facts_used: r.doc.facts_used, checks: r.checks, model: r.model, review: r.review,
+          });
+          await db.patchOpportunity(env, userId, id, { status: 'drafted' });
+          return { id: docId, doc: r.doc, checks: r.checks, review: r.review, degraded: r.degraded };
+        }
+        const l = await writeReviewed({
+          write: rev => runLetter(ctx, profile, facts, opp, analysis, opts, rev),
+          text: d => letterForReview(d),
+          review: (text, codeIssues, round) => runReview(ctx, profile, facts, reviewTargetFor('letter', opp, analysis), text, codeIssues, round),
+          onEvent: send,
+        });
+        // Ни одно письмо не показывается без swap-теста (§10.10, критерий 2 Этапа 2).
+        const swap = await runSwapTest(ctx, l.doc.body, opp);
+        const checks = [...l.checks, ...swap];
         const docId = await db.saveDocument(env, userId, id, {
-          kind: 'resume', body: JSON.stringify(r.doc), format_variant: r.doc.format_variant,
-          facts_used: r.doc.facts_used, checks: r.checks, model: r.model,
+          kind: 'letter', subject: l.doc.subject, body: l.doc.body,
+          facts_used: l.doc.facts_used, checks, model: l.model, review: l.review,
         });
         await db.patchOpportunity(env, userId, id, { status: 'drafted' });
-        return json({ id: docId, doc: r.doc, checks: r.checks, degraded: r.degraded });
-      }
-
-      const l = await runLetter(ctx, profile, facts, opp, analysis, opts);
-      // Ни одно письмо не показывается без swap-теста (§10.10, критерий 2 Этапа 2).
-      const swap = await runSwapTest(ctx, l.doc.body, opp);
-      const checks = [...l.checks, ...swap];
-      const docId = await db.saveDocument(env, userId, id, {
-        kind: 'letter', subject: l.doc.subject, body: l.doc.body,
-        facts_used: l.doc.facts_used, checks, model: l.model,
-      });
-      await db.patchOpportunity(env, userId, id, { status: 'drafted' });
-      return json({ id: docId, doc: l.doc, checks, degraded: l.degraded });
+        return { id: docId, doc: l.doc, checks, review: l.review, degraded: l.degraded };
+      };
+      return wantsStream(request) ? streamOperation(execCtx, work) : json(await work(() => {}));
     }
   }
 
@@ -428,6 +595,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       env.DB.prepare('DELETE FROM profiles WHERE user_id=?').bind(userId),
       env.DB.prepare('DELETE FROM usage_log WHERE user_id=?').bind(userId),
       env.DB.prepare('DELETE FROM runs WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM coach_sessions WHERE user_id=?').bind(userId),
       env.DB.prepare('DELETE FROM users WHERE id=?').bind(userId),
     ]);
     // Google-таблица НЕ удаляется: она принадлежит пользователю (§15.3).
@@ -580,4 +748,87 @@ async function executeRun(
       .bind('failed', message, nowIso(), runId).run();
     await send({ stage: 'done', error: message });
   }
+}
+
+// ── Документы с ревью: общие части ─────────────────────────────────────────
+
+async function generateResume(
+  ctx: Ctx, profile: Profile, facts: Fact[], opp: Opportunity, analysis: Analysis,
+  opts: { format_variant?: FormatVariant; pages?: 1 | 2 }, send: (e: DocEvent) => void,
+) {
+  const isMaster = !opp.company;
+  return writeReviewed({
+    write: rev => runResume(ctx, profile, facts, opp, analysis, opts, rev),
+    text: d => resumeForReview(d),
+    review: (text, codeIssues, round) => runReview(ctx, profile, facts,
+      reviewTargetFor('resume', isMaster ? null : opp, analysis, profile.perimeter), text, codeIssues, round),
+    onEvent: send,
+  });
+}
+
+/** «Место» для мастер-резюме: роль — первое направление периметра, без компании. */
+function masterOpportunity(profile: Profile): Opportunity {
+  const role = profile.perimeter.split(/[;\n]/).map(s => s.trim()).filter(Boolean)[0] ?? 'Senior leadership role';
+  return {
+    id: 'master', company: '', company_key: '', role_title: role, kind: 'vacancy', origin: 'manual_text',
+    status: 'new', channel: 'cold', updated_at: new Date().toISOString(),
+    country: profile.geo.split(/[,;]/)[0]?.trim() || undefined,
+  };
+}
+
+function emptyAnalysis(): Analysis {
+  return { expectations: [], blockers: [], score: 0, uvp: '', objection: null, reconstructed: true };
+}
+
+const wantsStream = (r: Request) => (r.headers.get('Accept') ?? '').includes('application/x-ndjson');
+
+/**
+ * Долгая операция со стримом прогресса — как прогон поиска. Работа доводится
+ * до конца в waitUntil, даже если вкладку закрыли: результат сохраняется в базе.
+ */
+function streamOperation(ctx: ExecutionContext, work: (send: (e: DocEvent) => void) => Promise<unknown>): Response {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  let open = true;
+  const send = (e: DocEvent) => {
+    if (!open) return;
+    writer.write(encoder.encode(JSON.stringify(e) + '\n')).catch(() => { open = false; });
+  };
+  ctx.waitUntil((async () => {
+    try {
+      const result = await work(send);
+      send({ stage: 'done', result });
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : 'Generation failed. Try again — the buttons are unlocked.';
+      if (!(e instanceof ApiError)) console.error('stream_operation', e instanceof Error ? e.message : String(e));
+      send({ stage: 'done', error: message });
+    } finally {
+      open = false;
+      try { await writer.close(); } catch { /* соединение уже закрыто */ }
+    }
+  })());
+  return new Response(readable, {
+    status: 200,
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' },
+  });
+}
+
+/** Применить предложение коуча. Факт из чата подтверждён самим пользователем. */
+async function applyProposal(env: Env, userId: string, profile: Profile, prop: CoachProposal): Promise<void> {
+  if (prop.kind === 'new_fact' && prop.fact) {
+    const f = prop.fact;
+    await db.insertFact(env, userId, {
+      id: uid(), company: f.company, role_title: f.role_title, action: String(f.action ?? ''),
+      how: f.how, result: f.result, metric_value: f.metric_value ?? null, metric_unit: f.metric_unit ?? null,
+      scale_tags: f.scale_tags ?? [], domain_tags: [], quantified: !!f.quantified,
+      source_hint: String(f.source_hint ?? f.user_input ?? '').slice(0, 200) || String(f.action ?? ''),
+      confirmed: true, review: null, user_input: f.user_input ?? null,
+    });
+  } else if (prop.kind === 'update_fact' && prop.fact_id && prop.fact) {
+    await db.patchFact(env, userId, prop.fact_id, { ...prop.fact, confirmed: true });
+  } else if (prop.kind === 'profile' && prop.profile) {
+    await db.saveProfile(env, userId, prop.profile);
+  }
+  void profile;
 }

@@ -6,15 +6,17 @@
 import { useState } from 'react';
 import type { Profile, Fact, AuditReport } from '../api/types.ts';
 import { Field, Card } from '../components/ui.tsx';
-import { FactList, SearchPrefsFields, type SearchPrefs } from './Profile.tsx';
+import { SearchPrefsFields, type SearchPrefs } from './Profile.tsx';
+import { FactReview } from './FactReview.tsx';
 
 const STEPS = ['Resume', 'Perimeter', 'Facts', 'Doubts'] as const;
 
-export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDone }: {
+export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onAnswerFact, onDone }: {
   profile: Profile; facts: Fact[]; audit: AuditReport | null; busy: boolean;
   onSave: (patch: Partial<Profile>) => Promise<void>;
   onAudit: () => Promise<void>;
-  onPatchFact: (id: string, patch: Partial<Fact>) => void;
+  onPatchFact: (id: string, patch: Partial<Fact>) => Promise<void> | void;
+  onAnswerFact: (id: string, answer: string) => Promise<boolean>;
   onDone: () => void;
 }) {
   const [step, setStep] = useState(0);
@@ -86,20 +88,18 @@ export function Onboarding({ profile, facts, audit, busy, onSave, onAudit, onPat
         <Card className="card-pad">
           <h1>Confirm the facts</h1>
           <p className="muted mt-8" style={{ marginBottom: 16 }}>
-            Here is what the app found in your resume. Checked facts — and only
-            those — go into resumes and letters. Anything unchecked is not used
-            anywhere: this keeps the model from crediting you with someone else’s achievement.
+            One fact at a time: the line from your resume, the fact made from it, and one
+            suggestion — a question that gets the missing number, or a stronger wording.
+            Only confirmed facts go into resumes and letters; this keeps the model from
+            crediting you with someone else’s achievement.
           </p>
           {busy && !facts.length && (
             <p className="small muted">Breaking the resume down into facts… this takes up to a minute.</p>
           )}
           {!!facts.length && (
             <>
-              <p className="small muted" style={{ marginBottom: 12 }}>
-                {confirmed} of {facts.length} confirmed. Facts without a number are highlighted —
-                try to recall a figure for them: a measurable result beats any adjective.
-              </p>
-              <FactList facts={facts} onPatch={onPatchFact} />
+              <FactReview facts={facts} busy={busy} onPatch={onPatchFact} onAnswer={onAnswerFact}
+                onFinished={() => setStep(3)} />
             </>
           )}
         </Card>

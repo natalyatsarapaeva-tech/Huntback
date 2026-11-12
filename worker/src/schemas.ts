@@ -22,7 +22,14 @@ export const ANALYSE_SCHEMA = {
             'deliberate_choice', 'analogous_tools', 'relocation_ready', 'results_over_years', null],
         },
         gap_answer: s(),
-      }, ['expectation', 'weight', 'evidence', 'fact_id', 'source_hint', 'strength', 'gap_class', 'bridge', 'gap_answer']),
+        fix: obj({
+          reason: { type: ['string', 'null'], enum: ['wording', 'missing_fact', 'real_gap', null] },
+          fact_id: { type: ['string', 'null'] },
+          rewrite: s('for wording: the fact reworded in the employer\'s terms, same numbers'),
+          question: s('for missing_fact: one concrete question to the candidate'),
+          strength_after: { type: 'string', enum: ['strong', 'partial', 'gap'] },
+        }, ['reason', 'fact_id', 'rewrite', 'question', 'strength_after']),
+      }, ['expectation', 'weight', 'evidence', 'fact_id', 'source_hint', 'strength', 'gap_class', 'bridge', 'gap_answer', 'fix']),
     },
     blockers: {
       type: 'array',
@@ -49,8 +56,14 @@ export const AUDIT_SCHEMA = {
         scale_tags: { type: 'array', items: { type: 'string', enum: ['team', 'managers', 'budget', 'pnl', 'geo', 'users'] } },
         domain_tags: { type: 'array', items: s() },
         source_hint: s('verbatim 3–8 word quote'),
+        review: obj({
+          kind: { type: 'string', enum: ['ok', 'question', 'rewrite'] },
+          question: s('a leading question that gets the missing number or scale'),
+          rewrite: obj({ action: s(), how: s(), result: s() }, ['action', 'how', 'result']),
+          why: s('one line for the candidate'),
+        }, ['kind', 'question', 'rewrite', 'why']),
       }, ['company', 'role_title', 'period_from', 'period_to', 'action', 'how', 'result',
-        'metric_value', 'metric_unit', 'scale_tags', 'domain_tags', 'source_hint']),
+        'metric_value', 'metric_unit', 'scale_tags', 'domain_tags', 'source_hint', 'review']),
     },
     roles: {
       type: 'array',
@@ -155,4 +168,73 @@ export const SWAP_SCHEMA = {
     broken: { type: 'array', items: s() },
     generic: { type: 'array', items: s() },
   }, ['broken', 'generic']),
+};
+
+export const REVIEW_SCHEMA = {
+  name: 'document_review',
+  schema: obj({
+    verdict: { type: 'string', enum: ['pass', 'revise'] },
+    issues: {
+      type: 'array',
+      items: obj({
+        type: { type: 'string', enum: ['duplication', 'factual', 'cliche', 'ai_ism', 'far_fetched', 'other'] },
+        quote: s('verbatim quote from the document'),
+        problem: s(), fix: s('concrete replacement or instruction'),
+        severity: { type: 'string', enum: ['high', 'low'] },
+      }, ['type', 'quote', 'problem', 'fix', 'severity']),
+    },
+    summary: s(),
+  }, ['verdict', 'issues', 'summary']),
+};
+
+const factShape = obj({
+  company: s(), role_title: s(), action: s(), how: s(), result: s(),
+  metric_value: { type: ['number', 'null'] }, metric_unit: s(),
+  scale_tags: { type: 'array', items: { type: 'string', enum: ['team', 'managers', 'budget', 'pnl', 'geo', 'users'] } },
+  user_quote: s('verbatim words of the candidate this fact rests on'),
+}, ['company', 'role_title', 'action', 'how', 'result', 'metric_value', 'metric_unit', 'scale_tags', 'user_quote']);
+
+export const COACH_SCHEMA = {
+  name: 'coach_turn',
+  schema: obj({
+    reply: s('the coach message: short acknowledgement, then exactly ONE next question'),
+    topic_id: s('id of the agenda topic the question is about'),
+    topic_done: { type: 'boolean' },
+    new_facts: { type: 'array', items: factShape },
+    fact_updates: {
+      type: 'array',
+      items: obj({
+        fact_id: s(), action: s(), how: s(), result: s(),
+        metric_value: { type: ['number', 'null'] }, metric_unit: s(), user_quote: s(),
+      }, ['fact_id', 'action', 'how', 'result', 'metric_value', 'metric_unit', 'user_quote']),
+    },
+    profile_updates: obj({
+      team_max: { type: ['number', 'null'] }, managers_max: { type: ['number', 'null'] },
+      budget_max: { type: ['number', 'null'] }, geo_scope: s(),
+      languages: { type: 'array', items: obj({ lang: s(), cefr: { type: 'string', enum: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] } }, ['lang', 'cefr']) },
+      work_auth: { type: 'array', items: obj({ region: s(), status: { type: 'string', enum: ['citizen', 'permit', 'needs_sponsorship'] } }, ['region', 'status']) },
+      relocation: { type: ['string', 'null'], enum: ['yes', 'no', 'conditional', null] },
+      gap_reason: s('reason for the career gap being discussed, if given'),
+      perimeter: s('target roles separated by semicolons, if given'),
+    }, ['team_max', 'managers_max', 'budget_max', 'geo_scope', 'languages', 'work_auth', 'relocation', 'gap_reason', 'perimeter']),
+  }, ['reply', 'topic_id', 'topic_done', 'new_facts', 'fact_updates', 'profile_updates']),
+};
+
+export const REFINE_FACT_SCHEMA = {
+  name: 'refined_fact',
+  schema: obj({
+    action: s(), how: s(), result: s(),
+    metric_value: { type: ['number', 'null'] }, metric_unit: s(),
+    scale_tags: { type: 'array', items: { type: 'string', enum: ['team', 'managers', 'budget', 'pnl', 'geo', 'users'] } },
+  }, ['action', 'how', 'result', 'metric_value', 'metric_unit', 'scale_tags']),
+};
+
+export const RESCORE_SCHEMA = {
+  name: 'rescore',
+  schema: obj({
+    relevant: { type: 'boolean' },
+    strength: { type: 'string', enum: ['strong', 'partial', 'gap'] },
+    evidence: s('how the new fact meets the expectation, one line'),
+    fact: factShape,
+  }, ['relevant', 'strength', 'evidence', 'fact']),
 };

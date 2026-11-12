@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Profile as P, Fact, AuditReport, LanguageLevel, WorkAuth, ResetScope } from '../api/types.ts';
 import { CEFR_ORDER } from '@huntback/core';
 import { Card, Field, Chip } from '../components/ui.tsx';
+import { FactReview } from './FactReview.tsx';
 
 export function FactList({ facts, onPatch, onDelete }: {
   facts: Fact[];
@@ -225,15 +226,24 @@ function useAutosave<T>(value: T, save: (v: T) => void, ms = 700) {
   }, [value]);
 }
 
-export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDeleteFact, onReset }: {
+export function ProfileScreen({
+  profile, facts, audit, busy, onSave, onAudit, onPatchFact, onDeleteFact, onReset, onAnswerFact, startInReview, onOpenCoach,
+}: {
   profile: P; facts: Fact[]; audit: AuditReport | null; busy: boolean;
   onSave: (patch: Partial<P>) => void;
   onAudit: () => void;
-  onPatchFact: (id: string, patch: Partial<Fact>) => void;
+  onPatchFact: (id: string, patch: Partial<Fact>) => Promise<void> | void;
   onDeleteFact: (id: string) => void;
   onReset: (scope: ResetScope) => void;
+  onAnswerFact: (id: string, answer: string) => Promise<boolean>;
+  startInReview?: boolean;
+  onOpenCoach: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
+  const [mode, setMode] = useState<'review' | 'list'>(startInReview ? 'review' : 'list');
+  const pendingReview = facts.filter(f => !f.confirmed || f.review?.status === 'pending' && f.review.kind !== 'ok').length;
+  const factsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (startInReview) factsRef.current?.scrollIntoView({ block: 'start' }); }, [startInReview]);
   useEffect(() => setDraft(profile), [profile.resume_text]);
   useAutosave(draft, d => onSave(d));
 
@@ -274,6 +284,7 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
 
       <AuditPanel audit={audit} busy={busy} onRun={onAudit} />
 
+      <div ref={factsRef} />
       <Card>
         <div className="card-head">
           <div style={{ flex: 1 }}>
@@ -281,12 +292,29 @@ export function ProfileScreen({ profile, facts, audit, busy, onSave, onAudit, on
             <div className="sub">
               {facts.filter(f => f.confirmed).length} of {facts.length} confirmed.
               Only confirmed facts go into documents.
+              {pendingReview > 0 && <> {pendingReview} still have a question or a suggested wording.</>}
             </div>
           </div>
+          {!!facts.length && (
+            <div className="flex gap-6">
+              <button className={`btn btn-sm ${mode === 'review' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => setMode('review')}>One by one</button>
+              <button className={`btn btn-sm ${mode === 'list' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => setMode('list')}>All</button>
+            </div>
+          )}
         </div>
         <div className="card-pad">
-          {facts.length ? <FactList facts={facts} onPatch={onPatchFact} onDelete={onDeleteFact} />
-            : <p className="small muted">Empty — run the audit and it will break the resume down into facts.</p>}
+          {!facts.length && <p className="small muted">Empty — run the audit and it will break the resume down into facts.</p>}
+          {!!facts.length && mode === 'review' && (
+            <FactReview facts={facts} busy={busy} onPatch={onPatchFact} onAnswer={onAnswerFact} onDelete={onDeleteFact}
+              onFinished={() => setMode('list')} />
+          )}
+          {!!facts.length && mode === 'list' && <FactList facts={facts} onPatch={onPatchFact} onDelete={onDeleteFact} />}
+          {!!facts.length && (
+            <p className="small muted mt-16">
+              Missing an achievement altogether? The <button className="link" onClick={onOpenCoach}>resume coach</button> asks
+              about what your resume doesn’t say yet and turns your answers into facts.
+            </p>
+          )}
         </div>
       </Card>
 

@@ -8,7 +8,8 @@ import {
   sanitizeDiscoverItem, computeScore, reconcileBlockers, demoteUnverified,
   sourceHintFound, auditProfile, checkResume, checkLetter, applySwapResult, parseCefr,
   titleVariants, describeTitleVariants, isLinkedInUrl, linkedinJobId, canonicalLinkedInJobUrl,
-  extractLinkedInJob, cleanJobText,
+  extractLinkedInJob, cleanJobText, sanitizeFix, sanitizeFactReview,
+  type ResumeDoc, type LetterDoc,
 } from '@huntback/core';
 import { type Env, ApiError, uid } from './env.ts';
 import { callModel, mapWithConcurrency } from './ai.ts';
@@ -98,14 +99,22 @@ export async function runAudit(ctx: Ctx, profile: Profile, existing: Fact[]) {
   const tol = ctx.cfg.thresholds.sourceHintTolerance;
   // Факт без подтверждённой цитаты отбрасывается МОЛЧА (§10.4a).
   const facts = (data.facts ?? [])
-    .map(raw => sanitizeFact(raw, uid))
+    .map(raw => {
+      const f = sanitizeFact(raw, uid);
+      // Подсказка разбора: вопрос или формулировка, с проверкой, что формулировка
+      // не принесла чисел, которых нет в резюме.
+      if (f) f.review = sanitizeFactReview((raw as Record<string, unknown>).review, f, [haystack]);
+      return f;
+    })
     .filter((f): f is Fact => f !== null && sourceHintFound(haystack, f.source_hint, tol));
 
-  // Ранее подтверждённые факты переживают повторный аудит.
+  // Ранее подтверждённые факты переживают повторный аудит — вместе с правками
+  // пользователя и состоянием разбора: пересчёт аудита не должен откатывать
+  // уже принятые формулировки и ответы.
   const confirmedBefore = new Map(existing.filter(f => f.confirmed).map(f => [f.source_hint, f]));
   const merged = facts.map(f => {
     const prev = confirmedBefore.get(f.source_hint);
-    return prev ? { ...f, id: prev.id, confirmed: true } : f;
+    return prev ? { ...prev, confirmed: true } : f;
   });
 
   const roles = (data.roles ?? []).map(r => {
@@ -166,6 +175,23 @@ export async function runAnalyse(
       if (f && f.confirmed) return true;
     }
     return sourceHintFound(haystackOf(profile), hint, ctx.cfg.thresholds.sourceHintTolerance);
+  });
+
+  // Правки: честность формулировок проверяет ядро. Ожидание без правки от
+  // модели всё равно получает путь: жёсткий гэп — честный «нет опыта»,
+  // остальное — вопрос пользователю.
+  analysis.expectations = analysis.expectations.map(e => {
+    let fix = sanitizeFix(e.fix, e, facts, profile);
+    if (!fix && e.strength !== 'strong') {
+      fix = e.gap_class === 'hard'
+        ? { reason: 'real_gap', fact_id: null, rewrite: '', question: '', strength_after: e.strength, status: 'open' }
+        : {
+          reason: 'missing_fact', fact_id: null, rewrite: '', status: 'open',
+          question: `Do you have experience with this: “${e.expectation}”? Describe it in a sentence or two, with numbers if you have them.`,
+          strength_after: 'strong',
+        };
+    }
+    return { ...e, fix };
   });
 
   // Правила главнее модели.
@@ -296,9 +322,34 @@ function documentLanguage(_opp: Opportunity): string {
   return 'en';
 }
 
+/** Переписывание по замечаниям проверяющего: прошлый черновик и что в нём не так. */
+export interface Revision { previous: string; comments: string[] }
+
+function revisionBlock(rev?: Revision): string {
+  if (!rev) return '';
+  return [
+    '', '=== REVISION ===',
+    'Your previous draft is below, followed by the reviewer\'s comments and the automated checks.',
+    'Rewrite the WHOLE document, fixing EVERY comment. Do not add facts or numbers that are not in the fact bank.',
+    'Keep what was not criticised. Do not mention the review in the document.',
+    '--- previous draft ---', rev.previous, '--- comments ---',
+    ...rev.comments.map((c, i) => `${i + 1}. ${c}`),
+  ].join('\n');
+}
+
+/** Формулировки, принятые пользователем для этого места, — писателю как обязательные. */
+function acceptedWording(analysis: Analysis): string {
+  const lines = analysis.expectations
+    .filter(e => e.fix?.status === 'applied' || e.fix?.status === 'answered')
+    .map(e => `- ${e.expectation}: ${e.evidence}`);
+  return lines.length
+    ? '\nThe candidate approved these wordings for this employer — use them (same facts, these words):\n' + lines.join('\n')
+    : '';
+}
+
 export async function runResume(
   ctx: Ctx, profile: Profile, facts: Fact[], opp: Opportunity, analysis: Analysis,
-  opts: { format_variant?: FormatVariant; pages?: 1 | 2 } = {},
+  opts: { format_variant?: FormatVariant; pages?: 1 | 2 } = {}, rev?: Revision,
 ) {
   const variant = opts.format_variant ?? formatForCountry(opp.country);
   const pages = opts.pages ?? ((profile.years_exp ?? 0) >= ctx.cfg.thresholds.twoPageYears ? 2 : 1);
@@ -310,10 +361,12 @@ export async function runResume(
     prefix: stablePrefix(profile, facts),
     instruction: fillPrompt(getPrompt(ctx.prompts, 'resume'), {
       OPPORTUNITY: [opp.company, opp.role_title, where].filter(Boolean).join(' · '),
-      EXPECTATIONS: analysis.expectations
-        .map(e => '[' + e.weight + '] ' + e.expectation + ' -> ' + e.evidence).join('\n'),
+      EXPECTATIONS: (analysis.expectations.length
+        ? analysis.expectations.map(e => '[' + e.weight + '] ' + e.expectation + ' -> ' + e.evidence).join('\n')
+        : 'General resume for the target roles: lead with the strongest confirmed facts with numbers.')
+        + acceptedWording(analysis),
       FORMAT: formatRules(variant), PAGES: pages, LANG: lang,
-    }),
+    }) + revisionBlock(rev),
     schema: RESUME_SCHEMA, temperature: 0.2, maxOutputTokens: 5000,
   });
 
@@ -324,7 +377,7 @@ export async function runResume(
 
 export async function runLetter(
   ctx: Ctx, profile: Profile, facts: Fact[], opp: Opportunity, analysis: Analysis,
-  opts: { tone?: 'neutral' | 'direct' | 'warm' } = {},
+  opts: { tone?: 'neutral' | 'direct' | 'warm' } = {}, rev?: Revision,
 ) {
   const isVacancy = opp.kind === 'vacancy';
   const range = isVacancy ? ctx.cfg.thresholds.letterVacancy : ctx.cfg.thresholds.letterHypothesis;
@@ -351,14 +404,14 @@ export async function runLetter(
         opp.jd_text ? 'From the posting: ' + opp.jd_text.slice(0, 4000) : '',
       ].filter(Boolean).join('\n'),
       EXPECTATIONS: analysis.expectations.filter(e => e.weight === 'must')
-        .map(e => e.expectation + ' -> ' + e.evidence).join('\n'),
+        .map(e => e.expectation + ' -> ' + e.evidence).join('\n') + acceptedWording(analysis),
       BRIDGE: softest ? softest.bridge + ': ' + softest.gap_answer : 'no soft gaps; write a paragraph about scale or trajectory',
       OBJECTION: analysis.objection ? analysis.objection.risk + ' -> ' + analysis.objection.answer : '',
       CHANNEL: channelLine,
       TONE: opts.tone ?? 'neutral',
       WORDS: range[0] + '-' + range[1],
       LANG: lang,
-    }),
+    }) + revisionBlock(rev),
     schema: LETTER_SCHEMA, temperature: 0.4, maxOutputTokens: 1600,
   });
 
@@ -481,3 +534,6 @@ export async function runDiscover(
   });
   return { items: batches.flat(), outcomes };
 }
+
+/** Тот же стабильный префикс — для проверяющего и коуча: кэш входа общий. */
+export const stableContext = stablePrefix;
