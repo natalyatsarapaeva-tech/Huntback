@@ -18,6 +18,7 @@ import {
   normalize, words, wordCount, findPhrase, containsPhrase, hasNumber,
   extractNumbers, sentences, paragraphs,
 } from './text.ts';
+import { checkStyle } from './style.ts';
 
 export interface CheckContext {
   cfg?: HuntbackConfig;
@@ -239,6 +240,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
     }
   }
 
+  out.push(...checkStyle(text, { lang: ctx.language ?? 'en', items: bullets, itemName: 'bullet' }));
   out.push(...checkSpelling(text, ctx));
   return out;
 }
@@ -366,6 +368,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
     }
   }
 
+  out.push(...checkStyle(body, { lang: ctx.language ?? 'en', items: sentences(body), itemName: 'sentence' }));
   out.push(...checkSpelling(body, ctx));
   return out;
 }

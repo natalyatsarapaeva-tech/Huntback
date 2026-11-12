@@ -7,6 +7,8 @@ import {
   sanitizeAnalysis, sanitizeFact, sanitizeIngest, sanitizeResume, sanitizeLetter,
   sanitizeDiscoverItem, computeScore, reconcileBlockers, demoteUnverified,
   sourceHintFound, auditProfile, checkResume, checkLetter, applySwapResult, parseCefr,
+  titleVariants, describeTitleVariants, isLinkedInUrl, linkedinJobId, canonicalLinkedInJobUrl,
+  extractLinkedInJob, cleanJobText,
 } from '@huntback/core';
 import { type Env, ApiError, uid } from './env.ts';
 import { callModel, mapWithConcurrency } from './ai.ts';
@@ -195,15 +197,31 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+/**
+ * Текст вакансии по ссылке — одна страница по явному действию пользователя.
+ * Для LinkedIn берётся гостевая страница /jobs/view/<id>/ и из неё — только
+ * блок описания: остальное там навигация и «похожие вакансии», которые
+ * разбор принял бы за требования.
+ */
 export async function fetchJobPage(url: string): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
+  const liId = linkedinJobId(url);
+  const target = liId ? canonicalLinkedInJobUrl(liId) : url;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: ctrl.signal });
-    if ([401, 403, 429].includes(res.status)) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
+    const res = await fetch(target, {
+      headers: { 'User-Agent': UA, 'Accept-Language': 'en' }, redirect: 'follow', signal: ctrl.signal,
+    });
+    if ([401, 403, 429, 999].includes(res.status)) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
     if (!res.ok) throw new ApiError('jd_fetch_failed', 'The page did not open. Paste the job posting text.', 422);
     const raw = (await res.text()).slice(0, 2 * 1024 * 1024);
-    const text = htmlToText(raw);
+    if (liId || isLinkedInUrl(url)) {
+      const job = extractLinkedInJob(raw);
+      if (!job) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
+      return [job.title, [job.company, job.location].filter(Boolean).join(' · '), '', job.description]
+        .filter((x, i) => x || i === 2).join('\n').trim();
+    }
+    const text = cleanJobText(htmlToText(raw));
     if (text.length < 400) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
     return text;
   } catch (e) {
@@ -234,7 +252,8 @@ export function demandFromIngest(raw: Record<string, unknown>, country: string):
   };
 }
 
-export async function runIngest(ctx: Ctx, text: string) {
+export async function runIngest(ctx: Ctx, rawText: string) {
+  const text = cleanJobText(rawText);
   const { data, model } = await callModel<Record<string, unknown>>(ctx.env, ctx.cfg, ctx.userId, {
     operation: 'ingest',
     prefix: 'You extract the structure of a job posting from text. An empty string instead of a guess.',
@@ -377,12 +396,15 @@ export function discoverAngles(ctx: Ctx, profile: Profile): string[] {
 }
 
 /**
- * Два прохода на направление. В одном общем веб-поиске новости о раундах и
+ * Три прохода на направление. В одном общем веб-поиске новости о раундах и
  * реорганизациях забивали выдачу, и находились одни гипотезы. Теперь:
- *   vacancies — веб-поиск только по сайтам вакансий и ATS (cfg.jobDomains);
+ *   linkedin  — веб-поиск только по linkedin.com, ссылки /jobs/view/<id>;
+ *   vacancies — сайты вакансий и ATS (cfg.jobDomains без LinkedIn);
  *   signals   — прежний поиск гипотез по датированным сигналам.
+ * LinkedIn отделён, потому что в общем списке из 60 доменов он забирал почти
+ * всю выдачу страницами поиска и компаний, а не самими вакансиями.
  */
-export const DISCOVER_PASSES = ['vacancies', 'signals'] as const;
+export const DISCOVER_PASSES = ['linkedin', 'vacancies', 'signals'] as const;
 export type DiscoverPass = typeof DISCOVER_PASSES[number];
 
 /**
@@ -393,7 +415,17 @@ export type DiscoverPass = typeof DISCOVER_PASSES[number];
 export type SearchMode = 'all' | 'vacancies';
 
 export function passesFor(mode: SearchMode): readonly DiscoverPass[] {
-  return mode === 'vacancies' ? ['vacancies'] : DISCOVER_PASSES;
+  return mode === 'vacancies' ? ['linkedin', 'vacancies'] : DISCOVER_PASSES;
+}
+
+const PASS_PROMPT: Record<DiscoverPass, string> = {
+  linkedin: 'discover_linkedin', vacancies: 'discover_vacancies', signals: 'discover',
+};
+
+function passDomains(ctx: Ctx, pass: DiscoverPass): string[] | undefined {
+  if (pass === 'linkedin') return ['linkedin.com'];
+  if (pass === 'vacancies') return ctx.cfg.jobDomains.filter(d => !/(^|\.)linkedin\.com$/.test(d));
+  return undefined;
 }
 
 export async function runDiscover(
@@ -413,17 +445,18 @@ export async function runDiscover(
     try {
       const tokens = {
         PERIMETER: angle, GEO: profile.geo, EXCLUDE: profile.exclude,
+        TITLES: describeTitleVariants(titleVariants(angle, profile.geo)),
         KNOWN: known.join(', '), BREADTH: profile.breadth, COUNT: perAngle, TODAY: today,
       };
       const { data, trace } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
         operation: 'discover',
         prefix: 'The candidate is looking for a job. Profile: ' + profile.resume_text.slice(0, 6000),
-        instruction: fillPrompt(getPrompt(ctx.prompts, pass === 'vacancies' ? 'discover_vacancies' : 'discover'), tokens),
+        instruction: fillPrompt(getPrompt(ctx.prompts, PASS_PROMPT[pass]), tokens),
         // Рассуждение и разбор найденного у рассуждающей модели съедают лимит
         // ответа: при 4000 JSON обрезался, и прогон находил ноль. Платится
         // только использованное, так что запас ничего не стоит.
         schema: DISCOVER_SCHEMA, temperature: 0.5, maxOutputTokens: 16000, webSearch: true,
-        searchDomains: pass === 'vacancies' ? ctx.cfg.jobDomains : undefined,
+        searchDomains: passDomains(ctx, pass),
       });
       const raw = data.items ?? [];
       const kept = (raw.map(sanitizeDiscoverItem).filter(Boolean) as DiscoverItem[])

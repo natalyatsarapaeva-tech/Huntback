@@ -9,13 +9,14 @@
 import {
   checkBudget, checkRunLimit, findDuplicate, reanalyseAfterProfileChange,
   computeScore, coverage, auditProfile, checkResume, checkLetter,
-  estimateRunSeconds, describeAngleOutcomes, OPPORTUNITY_LABELS,
+  estimateRunSeconds, describeAngleOutcomes, OPPORTUNITY_LABELS, jobUrlKey, canonicalJobUrl, splitJobTexts, companyKey,
   type RunEvent, type Demand, type Opportunity, type OpportunityLabel,
 } from '@huntback/core';
 import { type Env, ApiError, json, errorResponse, nowIso, uid } from './env.ts';
 import { authStart, authCallback, logout, requireSession } from './auth.ts';
 import * as db from './store.ts';
 import { PROMPT_META, DEFAULT_PROMPTS } from './prompts.ts';
+import { mapWithConcurrency } from './ai.ts';
 import {
   type Ctx, runAudit, runAnalyse, runIngest, runResume, runLetter, runSwapTest,
   runDiscover, discoverAngles, passesFor, fetchJobPage, formatForCountry, type SearchMode,
@@ -173,6 +174,44 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       : null;
     return json({ parsed: res.parsed, demand: res.demand, jd_text: res.jd_text, duplicate_of: dup, source_url: b.url ?? null });
   }
+  // Пакетная вставка: несколько вакансий одним текстом (разделитель ---).
+  // Подтверждения по одной нет намеренно: смысл пакета — не тратить время;
+  // распознанное сразу становится местами, дубль дополняет существующее.
+  if (p === '/api/opportunities/import/batch' && m === 'POST') {
+    const ctx = await ctxFor(env, userId);
+    await assertBudget(env, userId, ctx);
+    const b = await body<{ text?: string }>(request);
+    const parts = splitJobTexts(b.text ?? '').slice(0, 15);
+    if (!parts.length) throw new ApiError('bad_request', 'Paste at least one job posting (200+ characters). Separate several with a line of ---', 400);
+    const existing = (await db.listOpportunities(env, userId, {}))
+      .map(o => ({ id: o.id, company_key: o.company_key, role_title: o.role_title }));
+    const results = await mapWithConcurrency(parts, ctx.cfg.models.maxConcurrency, async (text, i) => {
+      try {
+        const res = await runIngest(ctx, text);
+        if (!res.parsed.is_job_posting || !res.parsed.company || !res.parsed.role_title) {
+          return { index: i, ok: false as const, error: 'Not recognised as a job posting — add it on its own and fill in company and role' };
+        }
+        const dup = findDuplicate({ company: res.parsed.company, role_title: res.parsed.role_title }, existing);
+        if (dup) {
+          await db.patchOpportunity(env, userId, dup, { jd_text: res.jd_text, kind: 'vacancy' });
+          await env.KV.put(`demand:${dup}`, JSON.stringify(res.demand), { expirationTtl: 60 * 60 * 24 * 365 });
+          return { index: i, ok: true as const, id: dup, merged: true, company: res.parsed.company, role_title: res.parsed.role_title };
+        }
+        const id = await db.createOpportunity(env, userId, {
+          company: res.parsed.company, role_title: res.parsed.role_title,
+          city: res.parsed.city, country: res.parsed.country, industry: res.parsed.industry, size: res.parsed.size,
+          kind: 'vacancy', origin: 'manual_text', jd_text: res.jd_text,
+          salary_hint: res.parsed.salary, contact_email: res.parsed.contact_email || undefined,
+        });
+        existing.push({ id, company_key: companyKey(res.parsed.company), role_title: res.parsed.role_title });
+        await env.KV.put(`demand:${id}`, JSON.stringify(res.demand), { expirationTtl: 60 * 60 * 24 * 365 });
+        return { index: i, ok: true as const, id, merged: false, company: res.parsed.company, role_title: res.parsed.role_title };
+      } catch (e) {
+        return { index: i, ok: false as const, error: e instanceof Error ? e.message : String(e) };
+      }
+    });
+    return json({ results });
+  }
   if (p === '/api/opportunities/import/confirm' && m === 'POST') {
     const b = await body<Record<string, unknown>>(request);
     const parsed = (b.parsed ?? {}) as Record<string, string>;
@@ -188,7 +227,7 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
       company: parsed.company, role_title: parsed.role_title,
       city: parsed.city, country: parsed.country, industry: parsed.industry, size: parsed.size,
       kind: 'vacancy', origin: b.source_url ? 'manual_url' : 'manual_text',
-      jd_text: String(b.jd_text ?? ''), source_url: b.source_url ? String(b.source_url) : undefined,
+      jd_text: String(b.jd_text ?? ''), source_url: b.source_url ? canonicalJobUrl(String(b.source_url)) : undefined,
       salary_hint: parsed.salary, contact_email: parsed.contact_email || undefined,
     });
     if (b.demand) await env.KV.put(`demand:${id}`, JSON.stringify(b.demand), { expirationTtl: 60 * 60 * 24 * 365 });
@@ -487,6 +526,9 @@ async function executeRun(
 
     const existing = await db.listOpportunities(env, userId, {});
     const index = existing.map(o => ({ id: o.id, company_key: o.company_key, role_title: o.role_title }));
+    // Одна и та же вакансия LinkedIn приходит из разных проходов и под чуть
+    // разными названиями роли — по id вакансии её видно точно.
+    const urlKeys = new Set(existing.map(o => jobUrlKey(o.source_url)).filter(Boolean) as string[]);
 
     await send({ stage: 'search', anglesDone: 0, anglesTotal: angles.length, estimateSec });
     await setStage(mode === 'vacancies' ? 'Searching for vacancies' : 'Searching for vacancies and companies with signals');
@@ -503,7 +545,10 @@ async function executeRun(
     let added = 0;
     for (const item of found) {
       if (!item) continue;
+      const key = jobUrlKey(item.source_url);
+      if (key && urlKeys.has(key)) continue;
       if (findDuplicate({ company: item.company, role_title: item.role_title }, index)) continue;
+      if (key) urlKeys.add(key);
       // Запись сразу, а не пачкой в конце: если прогон прервётся, уже найденное
       // останется у пользователя.
       const id = await db.createOpportunity(env, userId, {
@@ -515,7 +560,7 @@ async function executeRun(
         contact_title: item.contact?.title || undefined,
         contact_linkedin: item.contact?.linkedin || undefined,
       });
-      index.push({ id, company_key: item.company, role_title: item.role_title });
+      index.push({ id, company_key: companyKey(item.company), role_title: item.role_title });
       added++;
     }
 

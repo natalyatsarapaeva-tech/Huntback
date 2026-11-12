@@ -15,3 +15,7 @@ export * from './budget.ts';
 export * from './run.ts';
 export * from './sanitize.ts';
 export * from './openai.ts';
+export * from './titles.ts';
+export * from './style.ts';
+export * from './fixes.ts';
+export * from './coach.ts';

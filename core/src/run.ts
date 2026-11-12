@@ -159,7 +159,7 @@ export interface RunEvent {
 export interface AngleOutcome {
   angle: string;
   /** vacancies — только сайты вакансий и ATS; signals — гипотезы по сигналам. */
-  pass?: 'vacancies' | 'signals';
+  pass?: 'vacancies' | 'linkedin' | 'signals';
   /** Из сохранённого: сколько вакансий и сколько гипотез. */
   vacancies?: number;
   hypotheses?: number;
@@ -179,7 +179,7 @@ export interface AngleOutcome {
  */
 export function describeAngleOutcomes(outcomes: AngleOutcome[]): string[] {
   return outcomes.map(o => {
-    const pass = o.pass === 'vacancies' ? ' · vacancies' : o.pass === 'signals' ? ' · signals' : '';
+    const pass = o.pass ? ' · ' + o.pass : '';
     const name = `“${o.angle.length > 60 ? o.angle.slice(0, 60) + '…' : o.angle}”${pass}`;
     return `${name}: ${outcomeText(o)}${traceText(o)}`;
   });

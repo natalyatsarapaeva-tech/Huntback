@@ -51,12 +51,17 @@ export const PROMPT_META: Record<string, { label: string; where: string; tokens:
   discover: {
     label: 'Place discovery (hypotheses)',
     where: 'search run (§10.3)',
-    tokens: { PERIMETER: 'role perimeter and industries', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', BREADTH: 'narrow|medium|wide', COUNT: 'how many places are needed' },
+    tokens: { PERIMETER: 'role perimeter and industries', TITLES: 'title variants in English and local languages', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', BREADTH: 'narrow|medium|wide', COUNT: 'how many places are needed' },
   },
   discover_vacancies: {
     label: 'Published vacancy search',
     where: 'search run, “vacancies” pass: web search limited to job sites and ATSs',
-    tokens: { PERIMETER: 'role perimeter and industries', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
+    tokens: { PERIMETER: 'role perimeter and industries', TITLES: 'title variants in English and local languages', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
+  },
+  discover_linkedin: {
+    label: 'LinkedIn vacancy search',
+    where: 'search run, “linkedin” pass: web search limited to linkedin.com',
+    tokens: { PERIMETER: 'role perimeter and industries', TITLES: 'title variants in English and local languages', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
   },
   check: {
     label: 'Letter swap test',
@@ -184,6 +189,7 @@ Rules:
   discover: `You search for PLACES TO WORK for a candidate, not only published vacancies.
 
 Role perimeter and industries: {{PERIMETER}}
+The same role under other titles: {{TITLES}}
 Geography: {{GEO}}
 Exclude: {{EXCLUDE}}
 Already collected (do not suggest again): {{KNOWN}}
@@ -204,17 +210,18 @@ Rules:
   discover_vacancies: `You search for PUBLISHED VACANCIES for a candidate. Today is {{TODAY}}.
 
 Role perimeter and industries: {{PERIMETER}}
+Search with these titles (employers name the same role differently):
+{{TITLES}}
 Geography: {{GEO}}
 Exclude: {{EXCLUDE}}
 Already collected (do not suggest again): {{KNOWN}}
 Vacancies needed: {{COUNT}}
 
 How to search:
-- The search is limited to job sites: LinkedIn Jobs, company career pages on ATSs
-  (Teamtailor, Greenhouse, Lever, Workday, Jobylon, ReachMee, Varbi…) and
-  national boards (Platsbanken, Finn, Jobindex, Duunitori, jobs.ch, Reed…).
-- Run several queries: the role title in English AND in the country's language
-  (for example "COO" and "driftchef", "Head of Operations" and "operativ chef"),
+- The search is limited to company career pages on ATSs (Teamtailor, Greenhouse,
+  Lever, Workday, Jobylon, ReachMee, Varbi…) and national boards (Platsbanken,
+  Finn, Jobindex, Duunitori, jobs.ch, Reed…). LinkedIn is searched by a separate pass.
+- Run several queries: the titles above in English AND in the country's language,
   separately for the major cities and countries in the geography.
 - If there are several geographies, start with the priority one but do not stop there.
 
@@ -225,6 +232,34 @@ Rules:
   publication date (YYYY-MM-DD) if visible, otherwise an empty string.
 - Open vacancies only: no older than 60 days and not marked "closed / no longer
   accepting applications".
+- The level is managerial, as in the perimeter. Skip junior and specialist roles.
+- Make nothing up: if no vacancies were found, return an empty list.
+- Do not include email addresses. A contact only if it is named in the posting.`,
+
+  discover_linkedin: `You search LinkedIn Jobs for PUBLISHED VACANCIES for a candidate. Today is {{TODAY}}.
+
+Role perimeter and industries: {{PERIMETER}}
+Search with these titles (employers name the same role differently):
+{{TITLES}}
+Geography: {{GEO}}
+Exclude: {{EXCLUDE}}
+Already collected (do not suggest again): {{KNOWN}}
+Vacancies needed: {{COUNT}}
+
+How to search:
+- The search is limited to linkedin.com. Job postings live at addresses like
+  linkedin.com/jobs/view/<id> (also on country subdomains such as se.linkedin.com).
+- One query per title and country, for example: Head of Operations Stockholm jobs,
+  "driftchef" Sverige. Use the local-language titles for local-language postings.
+- Prefer postings from the last 30 days; skip anything marked "No longer accepting applications".
+
+Rules:
+- kind = "vacancy". source_url is the /jobs/view/<id> address of the posting itself —
+  never a search page, a company page, a post or a profile. A result without a job id is useless.
+- company is the hiring company as shown on the posting, not the recruiting agency when
+  the agency names its client; if the client is hidden, use the agency name.
+- signal is one line in English: what the position is and why it fits; signal_date is the
+  publication date (YYYY-MM-DD) if visible, otherwise an empty string.
 - The level is managerial, as in the perimeter. Skip junior and specialist roles.
 - Make nothing up: if no vacancies were found, return an empty list.
 - Do not include email addresses. A contact only if it is named in the posting.`,
