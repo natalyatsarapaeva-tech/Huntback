@@ -17,7 +17,10 @@ import {
 
 const str = (v: unknown, max = 4000): string =>
   typeof v === 'string' ? v.trim().slice(0, max) : '';
+// null, '' и false — «числа нет», а не ноль: Number(null) === 0, и без этой
+// оговорки каждый факт без числа становился «квантифицированным» со значением 0.
 const num = (v: unknown): number | null => {
+  if (v == null || v === '' || typeof v === 'boolean') return null;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : null;
 };

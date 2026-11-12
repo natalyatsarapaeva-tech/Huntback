@@ -288,8 +288,12 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
   }
   const companyText = [ctx.opportunity?.signal, ctx.opportunity?.jd_text].filter(Boolean).join(' ');
   const companyNumbers = new Set(extractNumbers(companyText));
+  // Длительность встречи в просьбе («a 20-minute call») — не утверждение о
+  // кандидате и не о компании; без этой оговорки почти каждое письмо
+  // блокировалось из-за собственной просьбы.
+  const meetingNumbers = new Set([...body.matchAll(/\b(\d{1,3})[\s-]?(?:minutes?|min)\b/gi)].map(m => m[1]));
   for (const n of extractNumbers(body)) {
-    if (known.has(n) || companyNumbers.has(n)) continue;
+    if (known.has(n) || companyNumbers.has(n) || meetingNumbers.has(n)) continue;
     // Год в пределах живой памяти — почти всегда дата сигнала; всё равно требуем источник.
     out.push({
       rule: 'number_consistency', level: 'block',

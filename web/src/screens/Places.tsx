@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import type {
   Opportunity, OpportunityDetail, CheckResult, ImportResult, SearchMode, OpportunityLabel,
-  DocumentReview, MatchPotential, BatchImportResult, Profile,
+  DocumentReview, MatchPotential, BatchImportResult, Profile, OpenQuestion,
 } from '../api/types.ts';
 import { hasUnresolvedBlocker, linkedinSearchLinks, type Expectation, type BlockerVerdict } from '@huntback/core';
 import { Score, Meter, Chip, KindChip, Checks, Card, Field, Empty } from '../components/ui.tsx';
@@ -88,9 +88,10 @@ function downloadCsv(list: Opportunity[]): void {
 export function Places({
   list, detail, selectedId, busy, searchMode, onSearchMode, onSelect, onAnalyse, onResume, onLetter,
   onArchive, onPatch, onFetchJobText, onImport, onConfirmImport, onGoToProfile, onRun, onBulkAnalyse,
-  profile, onImportBatch, onPrepare, onFix, onSaveLetter,
+  profile, onImportBatch, onPrepare, onFix, onSaveLetter, questions,
 }: {
   profile: Profile;
+  questions: OpenQuestion[];
   onImportBatch: (text: string) => Promise<BatchImportResult | null>;
   /** Пакетная подготовка: текст → разбор → формулировки → резюме → письмо. */
   onPrepare: (ids: string[]) => Promise<void>;
@@ -228,6 +229,12 @@ export function Places({
             </button>
           </div>
         </div>
+      )}
+
+      {!!questions.length && !selectedId && (
+        <QuestionsPanel questions={questions} busy={busy}
+          onAnswer={(q, answer) => onFix(q.opportunity_id, answer == null ? { index: q.index, action: 'dismiss' } : { index: q.index, action: 'answer', answer })}
+          onRebuild={ids => onPrepare(ids)} />
       )}
 
       {!!list.length && (
@@ -784,6 +791,61 @@ function ExpectationRow({ e, busy, onFix }: { e: Expectation; busy: boolean; onF
       )}
       <FixBlock e={e} busy={busy} onFix={onFix} />
     </div>
+  );
+}
+
+/**
+ * Вопросы всех разборов одним списком. Ответ на один вопрос — это новый факт
+ * в банке, поэтому он часто поднимает совпадение сразу на нескольких местах
+ * при следующем разборе; здесь он засчитывается месту, где задан.
+ */
+function QuestionsPanel({ questions, busy, onAnswer, onRebuild }: {
+  questions: OpenQuestion[]; busy: boolean;
+  onAnswer: (q: OpenQuestion, answer: string | null) => Promise<void>;
+  onRebuild: (ids: string[]) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<string[]>([]);
+  const places = new Set(questions.map(q => q.opportunity_id)).size;
+  const key = (q: OpenQuestion) => q.opportunity_id + ':' + q.index;
+  const rebuild = [...new Set(touched)];
+  return (
+    <Card>
+      <div className="card-head">
+        <div style={{ flex: 1 }}>
+          <h3>{questions.length} question{questions.length === 1 ? '' : 's'} could raise your match on {places} place{places === 1 ? '' : 's'}</h3>
+          <div className="sub">Experience you probably have but your profile doesn’t mention. Answer with a number, or say you don’t have it.</div>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Answer them'}</button>
+      </div>
+      {(open || rebuild.length > 0) && (
+        <div className="card-pad stack gap-12">
+          {open && questions.slice(0, 12).map(q => (
+            <div key={key(q)} className="fix">
+              <div className="small muted">{q.company} · {q.role_title} · {q.weight === 'must' ? 'must-have' : q.weight}</div>
+              <p style={{ fontSize: 14, margin: '4px 0' }}>{q.question}</p>
+              <div className="flex gap-8 wrap">
+                <input className="input" style={{ flex: '1 1 240px' }} aria-label={`Answer: ${q.question}`}
+                  value={answers[key(q)] ?? ''} placeholder="Yes — and the number"
+                  onChange={e => setAnswers(a => ({ ...a, [key(q)]: e.target.value }))} />
+                <button className="btn btn-primary btn-sm" disabled={busy || !(answers[key(q)] ?? '').trim()}
+                  onClick={async () => { await onAnswer(q, answers[key(q)].trim()); if (q.drafted) setTouched(t => [...t, q.opportunity_id]); }}>Answer</button>
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onAnswer(q, null)}>Don’t have it</button>
+              </div>
+            </div>
+          ))}
+          {open && questions.length > 12 && <p className="small muted">…and {questions.length - 12} more after these.</p>}
+          {rebuild.length > 0 && (
+            <div className="flex gap-8 items-center wrap">
+              <span className="small">Your answers changed {rebuild.length} place{rebuild.length === 1 ? '' : 's'} that already have documents.</span>
+              <button className="btn btn-primary btn-sm" disabled={busy}
+                onClick={async () => { await onRebuild(rebuild); setTouched([]); }}>Rebuild their documents</button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

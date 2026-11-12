@@ -260,6 +260,31 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     }
   }
 
+  // Все открытые вопросы разборов — одним списком: ответить на них подряд
+  // быстрее, чем открывать каждое место. По весу ожидания, must — первыми.
+  if (p === '/api/questions' && m === 'GET') {
+    const opps = (await db.listOpportunities(env, userId, {})).filter(o => !o.label);
+    const rows = await env.DB.prepare('SELECT opportunity_id, expectations FROM analyses WHERE user_id=?').bind(userId)
+      .all<{ opportunity_id: string; expectations: string }>();
+    const byOpp = new Map(opps.map(o => [o.id, o]));
+    const W = { must: 0, important: 1, nice: 2 } as const;
+    const out: Record<string, unknown>[] = [];
+    for (const r of rows.results ?? []) {
+      const o = byOpp.get(r.opportunity_id);
+      if (!o) continue;
+      let list: Analysis['expectations'] = [];
+      try { list = JSON.parse(r.expectations); } catch { continue; }
+      list.forEach((e, index) => {
+        if (e.fix?.reason === 'missing_fact' && e.fix.status === 'open') {
+          out.push({ opportunity_id: o.id, company: o.company, role_title: o.role_title, index,
+            expectation: e.expectation, weight: e.weight, question: e.fix.question, drafted: o.status === 'drafted' });
+        }
+      });
+    }
+    out.sort((a, b) => W[a.weight as keyof typeof W] - W[b.weight as keyof typeof W]);
+    return json({ questions: out });
+  }
+
   // ── Места (§8.3) ─────────────────────────────────────────────────────────
   if (p === '/api/opportunities' && m === 'GET') {
     return json(await db.listOpportunities(env, userId, {
@@ -356,10 +381,18 @@ async function route(request: Request, env: Env, url: URL, ctx: ExecutionContext
     if (!opp) throw new ApiError('not_found', 'Place not found', 404);
 
     if (!action && m === 'GET') {
-      const [stored, documents] = await Promise.all([
+      const [stored, documents, profileNow, cfgNow] = await Promise.all([
         db.getAnalysis(env, userId, id), db.latestDocuments(env, userId, id),
+        db.getProfile(env, userId), db.loadConfig(env),
       ]);
-      const analysis = stored ? { ...stored.analysis, score: computeScore(stored.analysis.expectations) } : null;
+      // Блокеры — правила над ТЕКУЩИМ профилем, без модели: заполнил право на
+      // работу — «неизвестно» исчезает сразу, а не после повторного разбора.
+      const analysis = stored
+        ? (() => {
+          const fresh = reanalyseAfterProfileChange(stored.analysis, stored.demand as Demand, profileNow, cfgNow.thresholds);
+          return { ...fresh, score: computeScore(fresh.expectations) };
+        })()
+        : null;
       return json({
         opportunity: opp, analysis, documents,
         coverage: analysis ? coverage(analysis.expectations) : null,

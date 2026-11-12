@@ -193,7 +193,7 @@ function outcomeText(o: AngleOutcome): string {
   const dropped = o.returned - o.kept;
   if (!dropped) return `found ${o.kept}${split}`;
   return `the model returned ${o.returned}, dropped ${dropped} `
-    + `(hypothesis without a dated signal and link, or without company and role)${split}`;
+    + `(no link to the posting itself, a hypothesis without a dated signal, or no company and role)${split}`;
 }
 
 function traceText(o: AngleOutcome): string {

@@ -9,9 +9,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Api, Me, Profile, Fact, AuditReport, Opportunity, OpportunityDetail, UsageSummary,
-  ImportResult, RunEvent, SearchMode, ResetScope, CoachView, MasterResume, DocEvent,
+  ImportResult, RunEvent, SearchMode, ResetScope, CoachView, MasterResume, DocEvent, OpenQuestion,
 } from './api/types.ts';
-import { runProgress, hasUnresolvedBlocker } from '@huntback/core';
+import { runProgress, hasUnresolvedBlocker, workAuthFor } from '@huntback/core';
 import { httpApi, ApiFailure } from './api/client.ts';
 import { mockApi } from './api/mock.ts';
 import { StatusBar, type Status } from './components/ui.tsx';
@@ -53,6 +53,7 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [coach, setCoach] = useState<CoachView | null>(null);
+  const [questions, setQuestions] = useState<OpenQuestion[]>([]);
   const [master, setMaster] = useState<MasterResume | null>(null);
   /** Открыть экран профиля сразу в режиме разбора фактов. */
   const [reviewFacts, setReviewFacts] = useState(false);
@@ -94,7 +95,11 @@ export function App() {
     }
   }, []);
 
-  const refreshList = useCallback(async (a: Api) => setList(await a.listOpportunities()), []);
+  // Список мест и открытые вопросы меняются вместе: разбор, правка, подготовка.
+  const refreshList = useCallback(async (a: Api) => {
+    setList(await a.listOpportunities());
+    a.questions().then(r => setQuestions(r.questions)).catch(() => {});
+  }, []);
 
   const openDemo = useCallback(async () => {
     setApi(() => mockApi);
@@ -103,6 +108,7 @@ export function App() {
     const p = await mockApi.getProfile();
     setProfile(p.profile); setFacts(p.facts); setAudit(p.audit); setMaster(p.master_resume ?? null);
     setList(await mockApi.listOpportunities());
+    setQuestions((await mockApi.questions()).questions);
     setUsage(await mockApi.usage());
     setStatus({ kind: 'info', text: 'Demo mode: the data is fictional, but the audit, match score, blockers and checks are computed by the real core.' });
   }, []);
@@ -351,8 +357,19 @@ export function App() {
    * пропускается: документы его не закроют, а бюджет потратят.
    */
   const prepare = async (ids: string[]) => {
+    // Предполётная проверка: место в стране без заполненного права на работу
+    // гарантированно уйдёт в «неизвестный» блокер. Дешевле спросить сейчас.
+    const countries = [...new Set(list.filter(o => ids.includes(o.id) && o.country).map(o => o.country!))]
+      .filter(c => workAuthFor(profile, c) === null);
+    if (countries.length && confirm(`Your right to work in ${countries.join(', ')} isn’t filled in. Places there will be skipped as “unknown”.\n\nOK — fill it in now (one field); Cancel — continue anyway.`)) {
+      setTab('profile');
+      setStatus({ kind: 'info', text: `Add “${countries.join(', ')}” under Work authorization (scroll to “What removes doubts”), then press Prepare documents again.` });
+      return;
+    }
     const total = ids.length;
     let done = 0;
+    let ready = 0;
+    const waiting: Record<string, number> = {};
     const lines: string[] = [];
     const now: Record<string, string> = {};
     let stopped = false;
@@ -374,7 +391,14 @@ export function App() {
       d = await api.getOpportunity(id);
       const before = d.analysis?.score ?? 0;
       if (d.analysis && hasUnresolvedBlocker(d.analysis.blockers)) {
-        lines.push(`${name}: skipped — hard blocker (${d.analysis.blockers.filter(b => !b.resolved).map(b => b.kind).join(', ')})`);
+        const open = d.analysis.blockers.filter(b => !b.resolved);
+        // «Не заполнено в профиле» и «действительно не подходит» — разные вещи,
+        // и пользователю нужно разное: поле в профиле или решение отказаться.
+        const fillable = open.filter(b => /\.unknown$/.test((b as { rule?: string }).rule ?? ''));
+        for (const b of fillable) waiting[b.kind] = (waiting[b.kind] ?? 0) + 1;
+        lines.push(fillable.length === open.length
+          ? `${name}: waiting for your profile — ${fillable.map(b => b.detail).join('; ')}`
+          : `${name}: skipped — hard blocker: ${open.filter(b => !fillable.includes(b)).map(b => b.detail).join('; ')} (open the place to decide)`);
         return;
       }
       let after = before;
@@ -385,10 +409,13 @@ export function App() {
         after = r.analysis.score; questions = r.potential.questions;
       }
       step('resume');
-      await api.makeResume(id, e => e.message && step(`resume — ${e.message.toLowerCase()}`));
+      const rs = await api.makeResume(id, e => e.message && step(`resume — ${e.message.toLowerCase()}`));
       step('letter');
-      await api.makeLetter(id, undefined, e => e.message && step(`letter — ${e.message.toLowerCase()}`));
-      lines.push(`${name}: match ${before}%${after !== before ? ` → ${after}%` : ''}, resume ✓ letter ✓`
+      const lt = await api.makeLetter(id, undefined, e => e.message && step(`letter — ${e.message.toLowerCase()}`));
+      ready++;
+      // «✓» только за документ без блокирующих замечаний — иначе честное «проверьте».
+      const mark = (c: { level: string }[]) => (c.some(x => x.level === 'block') ? '⚠ check remarks' : '✓');
+      lines.push(`${name}: match ${before}%${after !== before ? ` → ${after}%` : ''}, resume ${mark(rs.checks)} letter ${mark(lt.checks)}`
         + (questions ? ` · ${questions} question${questions === 1 ? '' : 's'} could raise it further` : ''));
     };
     const worker = async () => {
@@ -407,9 +434,14 @@ export function App() {
     await refreshList(api);
     if (selected) setDetail(await api.getOpportunity(selected));
     const failed = lines.filter(l => /failed —/.test(l)).length;
+    const FIELD: Record<string, string> = { work_auth: 'work authorization', language: 'languages', scale: 'team size', no_people_mgmt: 'team size', license: 'licenses', salary: 'salary range' };
+    const hint = Object.keys(waiting).length
+      ? ` Fill in ${Object.keys(waiting).map(k => FIELD[k] ?? k).join(' and ')} in your profile and press Prepare again — it unblocks ${Object.values(waiting).reduce((a, b) => Math.max(a, b), 0)} more.`
+      : '';
     setStatus({
-      kind: failed ? 'error' : 'ok',
-      text: failed ? `Documents prepared for ${total - failed} of ${total}${stopped ? ' — stopped: budget' : ''}` : `Documents ready for ${total} place${total === 1 ? '' : 's'} — open each to copy or print`,
+      kind: failed || !ready ? 'error' : 'ok',
+      text: `Documents ready for ${ready} of ${total} place${total === 1 ? '' : 's'}${stopped ? ' — stopped: budget' : ''}.${hint}`
+        + (ready ? ' Open each to copy or print.' : ''),
       lines,
     });
   };
@@ -446,6 +478,7 @@ export function App() {
               if (r) { setDetail(await api.getOpportunity(id)); await refreshList(api); }
             }}
             profile={profile}
+            questions={questions}
             onResume={makeResume}
             onLetter={makeLetter}
             onFix={fix}

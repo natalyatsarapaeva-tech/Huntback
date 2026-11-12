@@ -197,7 +197,8 @@ async function once(
       body.include = ['web_search_call.action.sources'];
     }
 
-    const res = await fetch('https://api.openai.com/v1/responses', {
+    const base = String(env.OPENAI_BASE_URL ?? '').trim() || 'https://api.openai.com/v1';
+    const res = await fetch(`${base.replace(/\/+$/, '')}/responses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${String(env.OPENAI_API_KEY).trim()}` },
       body: JSON.stringify(body),

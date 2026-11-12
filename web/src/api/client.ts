@@ -126,6 +126,7 @@ export const httpApi: Api = {
   coachReset: () => post('/coach/reset'),
   buildMasterResume: onEvent => streamResult<MasterResume>('/profile/master-resume', {}, onEvent),
   importBatch: text => post('/opportunities/import/batch', { text }),
+  questions: () => call('/questions'),
   fixExpectation: (id, b) => post(`/opportunities/${id}/fix`, b),
   saveDocument: (id, patch) => call(`/documents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   runSearch: (mode: SearchMode, onEvent) => streamNdjson('/runs', { mode }, onEvent),

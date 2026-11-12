@@ -382,7 +382,7 @@ export function ProfileScreen({
   );
 }
 
-function LanguageEditor({ value, onChange }: { value: LanguageLevel[]; onChange: (v: LanguageLevel[]) => void }) {
+export function LanguageEditor({ value, onChange }: { value: LanguageLevel[]; onChange: (v: LanguageLevel[]) => void }) {
   return (
     <div className="stack gap-8">
       {value.map((l, i) => (
@@ -404,7 +404,7 @@ function LanguageEditor({ value, onChange }: { value: LanguageLevel[]; onChange:
   );
 }
 
-function WorkAuthEditor({ value, onChange }: { value: WorkAuth[]; onChange: (v: WorkAuth[]) => void }) {
+export function WorkAuthEditor({ value, onChange }: { value: WorkAuth[]; onChange: (v: WorkAuth[]) => void }) {
   return (
     <div className="stack gap-8">
       {value.map((w, i) => (

@@ -74,9 +74,10 @@ export function sanitizeFix(
     if (!rewrite || unbacked.length) {
       // Число из ниоткуда: спрашиваем, а не утверждаем.
       reason = 'missing_fact';
-      question = question || (rewrite
-        ? `Is this accurate: “${rewrite}”? If so, describe it in your own words with the real numbers.`
-        : 'Do you have experience that matches this? Describe it in a sentence or two.');
+      // Выдуманную формулировку пользователю НЕ показываем даже как вопрос:
+      // «Верно ли, что вы руководили 140 людьми?» подсказывает число, которого
+      // никто не называл. Спрашиваем нейтрально, своими словами пользователя.
+      question = question || 'Do you have experience that matches this? Describe it in a sentence or two, with the real numbers.';
       rewrite = '';
     }
   }

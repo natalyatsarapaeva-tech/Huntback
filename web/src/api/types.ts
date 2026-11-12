@@ -40,6 +40,11 @@ export interface BatchImportResult {
     | { index: number; ok: false; error: string })[];
 }
 
+export interface OpenQuestion {
+  opportunity_id: string; company: string; role_title: string; index: number;
+  expectation: string; weight: 'must' | 'important' | 'nice'; question: string; drafted: boolean;
+}
+
 export interface GeneratedDoc { id: string; doc: unknown; checks: CheckResult[]; review?: DocumentReview | null }
 
 export interface Me {
@@ -122,6 +127,8 @@ export interface Api {
   coachReset(): Promise<CoachView>;
   buildMasterResume(onEvent?: (e: DocEvent) => void): Promise<MasterResume>;
   importBatch(text: string): Promise<BatchImportResult>;
+  /** Открытые вопросы всех разборов — ответить подряд, не открывая места. */
+  questions(): Promise<{ questions: OpenQuestion[] }>;
   fixExpectation(id: string, body: { index?: number; action: 'apply' | 'answer' | 'dismiss' | 'apply_all'; answer?: string }): Promise<FixResult>;
   listOpportunities(): Promise<Opportunity[]>;
   getOpportunity(id: string): Promise<OpportunityDetail>;

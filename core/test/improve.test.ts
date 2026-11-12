@@ -74,7 +74,7 @@ test('формулировка с выдуманным числом превра
     exp({ strength: 'partial' }), facts, profile());
   assert.equal(invented!.reason, 'missing_fact');
   assert.equal(invented!.rewrite, '');
-  assert.match(invented!.question, /60-person/);
+  assert.doesNotMatch(invented!.question, /60/, 'the invented number is never suggested to the user');
 });
 
 test('правка не ухудшает силу, у закрытого ожидания правки нет, неизвестный факт обнуляется', () => {
@@ -155,4 +155,20 @@ test('повестка коуча: неподтверждённые, роли б
   const skipped = coachAgenda(p, facts, { now: new Date('2026-11-12'), skipped: ['scale', 'languages'] }).map(t => t.id);
   assert.ok(!skipped.includes('scale') && !skipped.includes('languages'));
   assert.ok(coachProgress(p, facts).percent < 50);
+});
+
+test('регрессия: metric_value null — это «числа нет», а не 0', async () => {
+  const { sanitizeFact } = await import('../src/index.ts');
+  const f = sanitizeFact({ action: 'Improved stakeholder communication', source_hint: 'improved stakeholder communication', metric_value: null, result: '' }, () => 'x')!;
+  assert.equal(f.metric_value, null);
+  assert.equal(f.quantified, false);
+});
+
+test('регрессия: «20-minute call» не блокирует письмо как непроверенное число', async () => {
+  const { checkLetter } = await import('../src/index.ts');
+  const body = 'Would you be open to a 20-minute call next week? I cut costs by 99%.';
+  const r = checkLetter({ subject: '', body, word_count: 0, bridge_used: null, facts_used: [], language: 'en' }, 'vacancy', {});
+  const nums = r.filter(c => c.rule === 'number_consistency').map(c => c.message);
+  assert.equal(nums.length, 1);
+  assert.match(nums[0], /99/);
 });

@@ -415,3 +415,19 @@ table.t td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ── LinkedIn ───────────────────────────────────────────────────────────── */
 .li-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .link { all: unset; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
+
+/* Грид-ячейка по умолчанию не уже своего содержимого (min-width: auto) —
+ * одна длинная строка раздвигала карточку места за край экрана на 375 px. */
+.place-detail, .coach-main { min-width: 0; }
+/* Цели касания ≥ 44 px (§13.3): чекбокс факта и ссылка в тексте рисуются
+ * маленькими, но нажимаются по полной зоне — тем же приёмом, что .btn-sm. */
+.fact .checkbox { height: 44px; margin: -12px 0; }
+.link { position: relative; }
+.link::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 44px; }
+/* Четыре раздела в шапке на 375 px: без этого «Spending» обрезался до «Sp». */
+@media (max-width: 420px) {
+  .header-in { gap: 6px; padding: 0 12px; }
+  .nav { margin-left: 0; gap: 0; }
+  .nav-item { padding: 9px 7px; font-size: 13px; }
+  .header-logout { padding-left: 6px; padding-right: 6px; }
+}

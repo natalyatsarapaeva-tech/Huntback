@@ -590,6 +590,16 @@ Would you be open to a twenty-minute call in the week of 15 September?`;
     return masterResume;
   },
 
+  async questions() {
+    await delay(150);
+    const W = { must: 0, important: 1, nice: 2 } as const;
+    const out = opportunities.filter(o => !o.label && o.status !== 'archived' && analyses[o.id]).flatMap(o =>
+      analyses[o.id].expectations.map((e, index) => ({ e, index })).filter(({ e }) => e.fix?.reason === 'missing_fact' && e.fix.status === 'open')
+        .map(({ e, index }) => ({ opportunity_id: o.id, company: o.company, role_title: o.role_title, index,
+          expectation: e.expectation, weight: e.weight, question: e.fix!.question, drafted: o.status === 'drafted' })));
+    return { questions: out.sort((a, b) => W[a.weight] - W[b.weight]) };
+  },
+
   async importBatch(text) {
     await delay(1600);
     const parts = splitJobTexts(text);
