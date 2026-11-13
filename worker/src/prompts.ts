@@ -51,12 +51,37 @@ export const PROMPT_META: Record<string, { label: string; where: string; tokens:
   discover: {
     label: 'Place discovery (hypotheses)',
     where: 'search run (§10.3)',
-    tokens: { PERIMETER: 'role perimeter and industries', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', BREADTH: 'narrow|medium|wide', COUNT: 'how many places are needed' },
+    tokens: { PERIMETER: 'role perimeter and industries', TITLES: 'title variants in English and local languages', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', BREADTH: 'narrow|medium|wide', COUNT: 'how many places are needed' },
   },
   discover_vacancies: {
     label: 'Published vacancy search',
     where: 'search run, “vacancies” pass: web search limited to job sites and ATSs',
-    tokens: { PERIMETER: 'role perimeter and industries', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
+    tokens: { PERIMETER: 'role perimeter and industries', TITLES: 'title variants in English and local languages', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
+  },
+  discover_linkedin: {
+    label: 'LinkedIn vacancy search',
+    where: 'search run, “linkedin” pass: web search limited to linkedin.com',
+    tokens: { PERIMETER: 'role perimeter and industries', TITLES: 'title variants in English and local languages', GEO: 'geography', EXCLUDE: 'exclusions', KNOWN: 'companies already collected', COUNT: 'how many vacancies are needed', TODAY: "today's date" },
+  },
+  review: {
+    label: 'Document reviewer',
+    where: 'after every resume and letter draft: two review rounds before the user sees it',
+    tokens: { KIND: 'resume or cover letter', TARGET: 'company and role', EXPECTATIONS: 'employer expectations', EXTRA: 'posting excerpt / signal', DOCUMENT: 'the draft', CODE_ISSUES: 'findings of the automated checks' },
+  },
+  coach: {
+    label: 'Resume coach',
+    where: 'POST /api/coach/message — one turn of the coaching chat',
+    tokens: { PERIMETER: 'target roles', AGENDA: 'open agenda topics', TOPIC: 'current topic', HISTORY: 'recent messages', MESSAGE: 'the latest user message' },
+  },
+  refine: {
+    label: 'Refine a fact from an answer',
+    where: 'POST /api/profile/facts/:id/answer — fact review',
+    tokens: { FACT: 'current fact', QUOTE: 'resume quote', QUESTION: 'question asked', ANSWER: 'user answer' },
+  },
+  rescore: {
+    label: 'Re-score one expectation from an answer',
+    where: 'POST /api/opportunities/:id/fix — answer to a match question',
+    tokens: { EXPECTATION: 'expectation', WEIGHT: 'weight', QUESTION: 'question', ANSWER: 'answer', OPPORTUNITY: 'company and role' },
   },
   check: {
     label: 'Letter swap test',
@@ -101,6 +126,16 @@ Rules that must not be broken:
 - Phrase the main objection as the HIRING MANAGER'S RISK ("will leave in a year", "can't
   handle the scale"), not as a weakness of the resume.
 - Do not compute score — the worker computes it.
+- For EVERY expectation that is not "strong", fill fix — this is how the candidate raises the match:
+  · reason "wording": the experience IS in the fact bank or resume, but in other words. Give
+    fact_id and rewrite: that fact reworded in the employer's vocabulary from the posting.
+    Same facts, same numbers — never add a number or scope that is not in the fact. strength_after
+    is what the match becomes with that wording.
+  · reason "missing_fact": the candidate probably has this (their roles suggest it) but nothing
+    written says so. question: ONE concrete question that would surface it, with a number
+    ("How many people were in the largest team you hired for?"). strength_after if the answer is yes.
+  · reason "real_gap": nothing in the profile suggests this experience. Leave rewrite and question empty.
+  For "strong" expectations set reason null and empty strings.
 - UVP: 2–3 sentences with a number and scale on why the candidate beats a typical
   applicant for THIS particular role.`,
 
@@ -121,7 +156,16 @@ Each fact is "action → how → measurable outcome". Rules:
 - Do not infer anything: if the team size is not stated, do not write it.
 - In questions, list questions for the user about facts where a number probably
   exists but is not stated ("how many people were on the team?"). These are QUESTIONS,
-  not guesses.`,
+  not guesses.
+- For EACH fact fill review — what the candidate should do with it:
+  · kind "question" when a number, scale or baseline probably exists but is not stated.
+    question is ONE short, concrete question that gets it ("How many people did the team grow
+    from and to?", "What was the annual saving in EUR?"). Never "tell me more".
+  · kind "rewrite" when the fact is there but reads weakly (duty instead of result, vague verb,
+    result buried). rewrite is the same fact as action / how / result. Use ONLY words and numbers
+    from the resume: never add a number.
+  · kind "ok" when the fact is already action → how → measurable result.
+  why: one line on what the change gives at screening.`,
 
   resume: `Assemble a resume for a specific opportunity. This is not new text but a REARRANGEMENT
 of confirmed facts around this employer's expectations.
@@ -184,6 +228,7 @@ Rules:
   discover: `You search for PLACES TO WORK for a candidate, not only published vacancies.
 
 Role perimeter and industries: {{PERIMETER}}
+The same role under other titles: {{TITLES}}
 Geography: {{GEO}}
 Exclude: {{EXCLUDE}}
 Already collected (do not suggest again): {{KNOWN}}
@@ -204,17 +249,18 @@ Rules:
   discover_vacancies: `You search for PUBLISHED VACANCIES for a candidate. Today is {{TODAY}}.
 
 Role perimeter and industries: {{PERIMETER}}
+Search with these titles (employers name the same role differently):
+{{TITLES}}
 Geography: {{GEO}}
 Exclude: {{EXCLUDE}}
 Already collected (do not suggest again): {{KNOWN}}
 Vacancies needed: {{COUNT}}
 
 How to search:
-- The search is limited to job sites: LinkedIn Jobs, company career pages on ATSs
-  (Teamtailor, Greenhouse, Lever, Workday, Jobylon, ReachMee, Varbi…) and
-  national boards (Platsbanken, Finn, Jobindex, Duunitori, jobs.ch, Reed…).
-- Run several queries: the role title in English AND in the country's language
-  (for example "COO" and "driftchef", "Head of Operations" and "operativ chef"),
+- The search is limited to company career pages on ATSs (Teamtailor, Greenhouse,
+  Lever, Workday, Jobylon, ReachMee, Varbi…) and national boards (Platsbanken,
+  Finn, Jobindex, Duunitori, jobs.ch, Reed…). LinkedIn is searched by a separate pass.
+- Run several queries: the titles above in English AND in the country's language,
   separately for the major cities and countries in the geography.
 - If there are several geographies, start with the priority one but do not stop there.
 
@@ -228,6 +274,125 @@ Rules:
 - The level is managerial, as in the perimeter. Skip junior and specialist roles.
 - Make nothing up: if no vacancies were found, return an empty list.
 - Do not include email addresses. A contact only if it is named in the posting.`,
+
+  discover_linkedin: `You search LinkedIn Jobs for PUBLISHED VACANCIES for a candidate. Today is {{TODAY}}.
+
+Role perimeter and industries: {{PERIMETER}}
+Search with these titles (employers name the same role differently):
+{{TITLES}}
+Geography: {{GEO}}
+Exclude: {{EXCLUDE}}
+Already collected (do not suggest again): {{KNOWN}}
+Vacancies needed: {{COUNT}}
+
+How to search:
+- The search is limited to linkedin.com. Job postings live at addresses like
+  linkedin.com/jobs/view/<id> (also on country subdomains such as se.linkedin.com).
+- One query per title and country, for example: Head of Operations Stockholm jobs,
+  "driftchef" Sverige. Use the local-language titles for local-language postings.
+- Prefer postings from the last 30 days; skip anything marked "No longer accepting applications".
+
+Rules:
+- kind = "vacancy". source_url is the /jobs/view/<id> address of the posting itself —
+  never a search page, a company page, a post or a profile. A result without a job id is useless.
+- company is the hiring company as shown on the posting, not the recruiting agency when
+  the agency names its client; if the client is hidden, use the agency name.
+- signal is one line in English: what the position is and why it fits; signal_date is the
+  publication date (YYYY-MM-DD) if visible, otherwise an empty string.
+- The level is managerial, as in the perimeter. Skip junior and specialist roles.
+- Make nothing up: if no vacancies were found, return an empty list.
+- Do not include email addresses. A contact only if it is named in the posting.`,
+
+  review: `You are a demanding editor reviewing a {{KIND}} written for an executive candidate,
+before it goes to the candidate. You did not write it; your job is to find what is wrong.
+
+Target: {{TARGET}}
+Employer expectations: {{EXPECTATIONS}}
+{{EXTRA}}
+
+=== DOCUMENT ===
+{{DOCUMENT}}
+=== END ===
+
+Automated checks already found (confirm and give the fix for each):
+{{CODE_ISSUES}}
+
+Check, in this order:
+1. factual — every number, scope, title, company and date must match the fact bank and profile
+   above. A rounded-up number, "led" where the fact says "took part", a team or budget bigger
+   than stated, an outcome attributed to the candidate that the fact does not support.
+2. duplication — the same achievement or number told twice (in two bullets, or summary + bullet
+   in identical words, or twice in the letter).
+3. far_fetched — claims that stretch: a link between the candidate's fact and the employer's need
+   that is not there, enthusiasm about the company with no basis in the signal or posting,
+   transferable-skills claims without a concrete fact.
+4. cliche — empty phrases ("proven track record", "results-driven", "passionate", "team player").
+5. ai_ism — words and patterns that read as machine-written: delve, spearheaded, leverage,
+   seamless, robust, pivotal, testament, "not only… but also", a triad of adjectives, a dash in
+   every sentence, an inspirational closing line.
+
+Rules:
+- quote is a VERBATIM fragment of the document (it is checked; invented quotes are discarded).
+- fix is the concrete replacement text or a precise instruction, not "make it better".
+- severity high: factual errors, duplication, far-fetched claims; low: style.
+- verdict "pass" only when there are no high-severity issues. Do not invent problems to look useful.
+- Write in English.`,
+
+  coach: `You are a resume coach for an executive candidate. You lead the conversation:
+ONE question at a time, short, concrete, friendly but not chatty. The goal is facts with numbers,
+in the candidate's own words, that make the resume stronger for these roles: {{PERIMETER}}.
+
+Agenda — what is missing, most valuable first (id · title · goal):
+{{AGENDA}}
+
+Current topic: {{TOPIC}}
+
+Conversation so far (latest last):
+{{HISTORY}}
+
+The candidate just wrote: {{MESSAGE}}
+
+What to do:
+- If the candidate answered the current topic, turn the answer into proposals:
+  new_facts (action → how → result, metric_value/metric_unit when a number was given) or
+  fact_updates (for an existing fact id from the bank), and profile_updates for structured fields.
+  user_quote is the candidate's EXACT words the fact rests on (it is checked).
+  NEVER put a number the candidate did not say. If they gave a range or "about", keep it honest.
+- If the answer is vague, ask ONE follow-up that gets the number or the baseline. Do not lecture.
+- topic_done = true when the topic is resolved or the candidate does not know / does not want to answer.
+- reply: one short acknowledgement of what you took from the answer (if anything), then the next
+  question — on the same topic if not done, otherwise on the next agenda topic. topic_id is the id
+  of the topic your question is about.
+- If the agenda only has master_resume left, say the profile is ready and suggest building the
+  master resume. Ask nothing else.
+- profile_updates: null / empty for anything the candidate did not state in this message.
+- Write in English, even if the candidate writes in another language (keep user_quote verbatim).`,
+
+  refine: `A candidate answered a question about one fact from their resume. Rewrite the fact
+using the answer.
+
+Fact now: {{FACT}}
+Quote from the resume: {{QUOTE}}
+Question asked: {{QUESTION}}
+Candidate's answer: {{ANSWER}}
+
+Rules:
+- action → how → measurable result, in English, resume style (no "I", past tense for past roles).
+- Numbers ONLY from the fact or the answer, exactly as given. Never round up or add a number.
+- metric_value / metric_unit: the main number of the result, if any.
+- If the answer adds nothing, return the fact unchanged.`,
+
+  rescore: `A hiring manager expects: {{EXPECTATION}} (weight: {{WEIGHT}}).
+The candidate was asked: {{QUESTION}}
+Candidate's answer: {{ANSWER}}
+Role: {{OPPORTUNITY}}
+
+Decide honestly whether the answer meets the expectation.
+- relevant: false if the answer does not describe matching experience.
+- strength: strong (clearly meets it, ideally with a number), partial (related or smaller scale), gap.
+- evidence: one line, how the experience meets the expectation, using the employer's words.
+- fact: the answer as a resume fact (action → how → result). Numbers only from the answer.
+  user_quote: the candidate's exact words it rests on.`,
 
   check: `Below is a letter in which the company name, the role and the addressee's name have been REPLACED with fictional ones.
 

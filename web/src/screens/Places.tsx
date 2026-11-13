@@ -4,9 +4,19 @@
 import { useEffect, useState } from 'react';
 import type {
   Opportunity, OpportunityDetail, CheckResult, ImportResult, SearchMode, OpportunityLabel,
+  DocumentReview, MatchPotential, BatchImportResult, Profile, OpenQuestion,
 } from '../api/types.ts';
-import { hasUnresolvedBlocker, type Expectation, type BlockerVerdict } from '@huntback/core';
+import { hasUnresolvedBlocker, linkedinSearchLinks, type Expectation, type BlockerVerdict } from '@huntback/core';
 import { Score, Meter, Chip, KindChip, Checks, Card, Field, Empty } from '../components/ui.tsx';
+import {
+  ReviewReport, DocActions, resumeHtml, letterHtml, resumePlainText, parseResume,
+} from '../components/docs.tsx';
+
+export type FixAction = {
+  index?: number; action: 'apply' | 'answer' | 'dismiss' | 'apply_all' | 'reuse'; answer?: string;
+  /** place — только для этой вакансии; reuse — ещё и в банк фактов, для всех мест. */
+  scope?: 'place' | 'reuse';
+};
 
 const BRIDGE_LABEL: Record<string, string> = {
   transferable_metrics: 'metrics transfer across industries',
@@ -82,7 +92,15 @@ function downloadCsv(list: Opportunity[]): void {
 export function Places({
   list, detail, selectedId, busy, searchMode, onSearchMode, onSelect, onAnalyse, onResume, onLetter,
   onArchive, onPatch, onFetchJobText, onImport, onConfirmImport, onGoToProfile, onRun, onBulkAnalyse,
+  profile, onImportBatch, onPrepare, onFix, onSaveLetter, questions,
 }: {
+  profile: Profile;
+  questions: OpenQuestion[];
+  onImportBatch: (text: string) => Promise<BatchImportResult | null>;
+  /** Пакетная подготовка: текст → разбор → формулировки → резюме → письмо. */
+  onPrepare: (ids: string[]) => Promise<void>;
+  onFix: (id: string, fix: FixAction) => Promise<void>;
+  onSaveLetter: (docId: string, oppId: string, patch: { subject?: string; body: string }) => Promise<void>;
   list: Opportunity[];
   detail: OpportunityDetail | null;
   selectedId: string | null;
@@ -103,6 +121,7 @@ export function Places({
   onBulkAnalyse: (ids: string[]) => Promise<void>;
 }) {
   const [adding, setAdding] = useState(false);
+  const [linkedin, setLinkedin] = useState(false);
   const [filter, setFilter] = useState<KindFilter>('all');
   const [labelFilter, setLabelFilter] = useState<LabelFilter>('active');
   const [sort, setSort] = useState<SortOrder>('recent');
@@ -113,6 +132,15 @@ export function Places({
   const labelled = list.filter(o => !!o.label).length;
   // Массовая проверка — только по тому, что сейчас видно и ещё не разобрано.
   const toCheck = shown.filter(o => !o.label && needsMatch(o));
+
+  // Подготовка — по видимым активным местам без готовых черновиков.
+  const toPrepare = shown.filter(o => !o.label && o.status !== 'drafted' && o.status !== 'sent');
+  const prepareAll = async () => {
+    if (!toPrepare.length) return;
+    const n = toPrepare.length;
+    if (!confirm(`Prepare a resume and a letter for ${n} place${n === 1 ? '' : 's'}?\n\nFor each: fetch the posting text if possible, analyse the match, apply the wording fixes, then write the resume and the letter — each reviewed twice. About 2–4 minutes per place; it is billed to your monthly budget.`)) return;
+    await onPrepare(toPrepare.map(o => o.id));
+  };
 
   const checkAll = async () => {
     if (!toCheck.length) return;
@@ -138,7 +166,11 @@ export function Places({
             title="Employer, role, type, match % and link for every place">
             Export CSV
           </button>
-          <button className="btn btn-secondary" onClick={() => setAdding(a => !a)}>Add vacancy</button>
+          <button className="btn btn-ghost" onClick={() => setLinkedin(v => !v)} aria-expanded={linkedin}
+            title="Ready-made LinkedIn searches for your roles and countries, filtered to the last week">
+            LinkedIn searches
+          </button>
+          <button className="btn btn-secondary" onClick={() => setAdding(a => !a)}>Add vacancies</button>
           <select className="select" style={{ width: 'auto' }} value={searchMode} aria-label="What to search for"
             onChange={e => onSearchMode(e.target.value as SearchMode)}>
             <option value="all">Vacancies + hypotheses</option>
@@ -150,7 +182,10 @@ export function Places({
         </div>
       </div>
 
-      {adding && <AddJob onImport={onImport} onConfirm={r => { onConfirmImport(r); setAdding(false); }} busy={busy} />}
+      {linkedin && <LinkedInLinks profile={profile} onPaste={() => { setAdding(true); setLinkedin(false); }} />}
+
+      {adding && <AddJob onImport={onImport} onImportBatch={onImportBatch}
+        onConfirm={r => { onConfirmImport(r); setAdding(false); }} onDone={() => setAdding(false)} busy={busy} />}
 
       {!list.length && !adding && (
         <Card>
@@ -192,8 +227,18 @@ export function Places({
               title="Analyse every shown place that has no match score yet">
               Check match{toCheck.length ? ` · ${toCheck.length} new` : ''}
             </button>
+            <button className="btn btn-primary btn-sm" onClick={prepareAll} disabled={busy || !toPrepare.length}
+              title="Resume and letter for every shown active place that has no drafts yet">
+              Prepare documents{toPrepare.length ? ` · ${toPrepare.length}` : ''}
+            </button>
           </div>
         </div>
+      )}
+
+      {!!questions.length && !selectedId && (
+        <QuestionsPanel questions={questions} busy={busy}
+          onAnswer={(q, answer) => onFix(q.opportunity_id, answer == null ? { index: q.index, action: 'dismiss' } : { index: q.index, action: 'answer', answer })}
+          onRebuild={ids => onPrepare(ids)} />
       )}
 
       {!!list.length && (
@@ -215,6 +260,7 @@ export function Places({
                   <KindChip kind={o.kind} />
                   {o.city && <Chip>{o.city}</Chip>}
                   {o.label && <Chip tone="mid">{LABEL_TEXT[o.label]}</Chip>}
+                  {o.status === 'drafted' && <Chip tone="good" title="Resume and/or letter written">drafts ready</Chip>}
                   {o.score != null && <Score value={o.score} size="sm" />}
                 </div>
               </button>
@@ -225,7 +271,10 @@ export function Places({
             {detail
               ? <Detail key={detail.opportunity.id} d={detail} busy={busy} onAnalyse={onAnalyse} onResume={onResume}
                   onLetter={onLetter} onArchive={onArchive} onPatch={onPatch} onFetchJobText={onFetchJobText}
-                  onBack={() => onSelect(null)} onGoToProfile={onGoToProfile} />
+                  onBack={() => onSelect(null)} onGoToProfile={onGoToProfile}
+                  onFix={fix => onFix(detail.opportunity.id, fix)}
+                  onSaveLetter={(docId, patch) => onSaveLetter(docId, detail.opportunity.id, patch)}
+                  onPrepare={() => onPrepare([detail.opportunity.id])} />
               : <Card><Empty title="Pick a place on the left" /></Card>}
           </div>
         </div>
@@ -235,14 +284,55 @@ export function Places({
 }
 
 // ── Добавление вакансии (§3.4) ──────────────────────────────────────────────
-function AddJob({ onImport, onConfirm, busy }: {
+function AddJob({ onImport, onImportBatch, onConfirm, onDone, busy }: {
   onImport: (i: { url?: string; text?: string }) => Promise<ImportResult | null>;
+  onImportBatch: (text: string) => Promise<BatchImportResult | null>;
   onConfirm: (r: ImportResult) => void;
+  onDone: () => void;
   busy: boolean;
 }) {
   const [url, setUrl] = useState('');
   const [text, setText] = useState('');
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [batch, setBatch] = useState(false);
+  const [batchText, setBatchText] = useState('');
+  const [batchResult, setBatchResult] = useState<BatchImportResult | null>(null);
+
+  if (batch) {
+    const parts = batchText.split(/^\s*(?:-{3,}|={3,})\s*$/m).map(x => x.trim()).filter(x => x.length >= 200).length;
+    return (
+      <Card className="card-pad">
+        <div className="flex between items-center wrap gap-8">
+          <h3>Add several vacancies at once</h3>
+          <button className="btn btn-ghost btn-sm" onClick={() => setBatch(false)}>One at a time</button>
+        </div>
+        <p className="muted small mt-8" style={{ marginBottom: 12 }}>
+          Open each posting (LinkedIn, a career site), select all the text, copy, and paste it here.
+          Put a line with <code>---</code> between postings. Up to 15 at a time; LinkedIn buttons and counters are cleaned out automatically.
+        </p>
+        <textarea className="textarea" style={{ minHeight: 220 }} value={batchText} aria-label="Several job postings"
+          onChange={e => { setBatchText(e.target.value); setBatchResult(null); }}
+          placeholder={'Head of Operations\nAcme · Stockholm\nAbout the job…\n---\nVP Supply Chain\n…'} />
+        <div className="flex gap-8 items-center mt-8 wrap">
+          <button className="btn btn-primary" disabled={busy || !parts}
+            onClick={async () => { const r = await onImportBatch(batchText); if (r) setBatchResult(r); }}>
+            Recognise {parts ? `${parts} posting${parts === 1 ? '' : 's'}` : ''}
+          </button>
+          {batchResult && <button className="btn btn-ghost" onClick={onDone}>Close</button>}
+        </div>
+        {batchResult && (
+          <ul className="small mt-12" style={{ paddingLeft: 18 }}>
+            {batchResult.results.map(r => (
+              <li key={r.index}>
+                {r.ok ? <>{r.merged ? 'Added the text to' : 'Created'} <b>{r.company}</b> · {r.role_title}</>
+                  : <span style={{ color: 'var(--danger)' }}>Posting {r.index + 1}: {r.error}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    );
+  }
 
   if (result) {
     const p = result.parsed;
@@ -292,10 +382,13 @@ function AddJob({ onImport, onConfirm, busy }: {
 
   return (
     <Card className="card-pad">
-      <h3>Add a vacancy</h3>
+      <div className="flex between items-center wrap gap-8">
+        <h3>Add a vacancy</h3>
+        <button className="btn btn-ghost btn-sm" onClick={() => setBatch(true)}>Paste several at once</button>
+      </div>
       <p className="muted small mt-8" style={{ marginBottom: 16 }}>
-        Either field works. A link is easier, but LinkedIn, Indeed and some
-        corporate ATSs only serve the page to a browser — then just paste the text.
+        Either field works. A LinkedIn job link usually works too; some corporate ATSs
+        only serve the page to a browser — then just paste the text.
       </p>
       <div className="row" style={{ alignItems: 'flex-start' }}>
         <Field label="Vacancy link">
@@ -319,12 +412,15 @@ function AddJob({ onImport, onConfirm, busy }: {
 }
 
 // ── Карточка места (§13.1.4) ────────────────────────────────────────────────
-function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, onFetchJobText, onBack, onGoToProfile }: {
+function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, onFetchJobText, onBack, onGoToProfile, onFix, onSaveLetter, onPrepare }: {
   d: OpportunityDetail; busy: boolean;
   onAnalyse: (id: string) => void; onResume: (id: string) => void; onLetter: (id: string) => void;
   onArchive: (id: string) => void; onPatch: (id: string, p: Record<string, unknown>) => void;
   onFetchJobText: (id: string) => void;
   onBack: () => void; onGoToProfile: () => void;
+  onFix: (fix: FixAction) => Promise<void>;
+  onSaveLetter: (docId: string, patch: { subject?: string; body: string }) => Promise<void>;
+  onPrepare: () => void;
 }) {
   const [tab, setTab] = useState<'overview' | 'jd'>('overview');
   const o = d.opportunity;
@@ -431,9 +527,15 @@ function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, on
               ? 'There is a job posting text — the analysis will be built on it, not on guesses about the role.'
               : 'No job posting text: expectations will be reconstructed from the role, industry and signal, and marked as a reconstruction. You can add the text in the Job description tab.'}
           </p>
-          <button className="btn btn-primary" onClick={() => onAnalyse(o.id)} disabled={busy}>
-            Analyse expectations
-          </button>
+          <div className="flex gap-8 wrap">
+            <button className="btn btn-primary" onClick={() => onAnalyse(o.id)} disabled={busy}>
+              Analyse expectations
+            </button>
+            <button className="btn btn-secondary" onClick={onPrepare} disabled={busy}
+              title="Analyse, apply wording fixes, then write the resume and the letter">
+              Do everything: analyse + documents
+            </button>
+          </div>
         </Card>
       )}
 
@@ -452,8 +554,9 @@ function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, on
             </div>
             <div className="card-pad">
               <Meter value={a.score} />
+              {d.potential && <PotentialBanner p={d.potential} busy={busy} onApplyAll={scope => onFix({ action: 'apply_all', scope })} />}
               <div className="mt-16">
-                {a.expectations.map((e, i) => <ExpectationRow key={i} e={e} />)}
+                {a.expectations.map((e, i) => <ExpectationRow key={i} e={e} busy={busy} onFix={fix => onFix({ ...fix, index: i })} />)}
               </div>
             </div>
           </Card>
@@ -510,22 +613,37 @@ function Detail({ d, busy, onAnalyse, onResume, onLetter, onArchive, onPatch, on
 
           <DocumentBlock
             title="Resume for this place"
-            hint={`Format: ${resume?.format_variant ?? 'by the place’s country'}. Not new text, but confirmed facts rearranged around the expectations.`}
+            hint={`Format: ${resume?.format_variant ?? 'by the place’s country'}. Confirmed facts rearranged around the expectations, then reviewed twice for facts, repeats, clichés and AI-isms.`}
             doc={resume ? renderResume(resume.body) : null}
             checks={resume?.checks ?? []}
+            review={resume?.review}
             action={resume ? 'Rebuild' : 'Build resume'}
             busy={busy}
             onRun={() => onResume(o.id)}
+            exportAs={resume ? (() => {
+              const r = parseResume(resume.body);
+              return r ? { text: resumePlainText(r), html: resumeHtml(r), fileName: `resume-${slug(o.company)}.txt` } : null;
+            })() : null}
           />
 
           <DocumentBlock
             title={o.kind === 'vacancy' ? 'Cover letter' : 'Cold letter to an executive'}
-            hint={o.kind === 'vacancy' ? '250–350 words, read together with the resume' : '120–180 words: one observation, one proof, one ask'}
+            hint={o.kind === 'vacancy' ? '250–350 words, read together with the resume. Reviewed twice before you see it.' : '120–180 words: one observation, one proof, one ask. Reviewed twice before you see it.'}
             doc={letter ? (letter.subject ? `Subject: ${letter.subject}\n\n${letter.body}` : letter.body) : null}
             checks={letter?.checks ?? []}
+            review={letter?.review}
             action={letter ? 'Rewrite' : 'Write letter'}
             busy={busy}
             onRun={() => onLetter(o.id)}
+            onSave={letter ? (t => {
+              const m = t.match(/^Subject:\s*(.*)\n\n?/);
+              return onSaveLetter(letter.id, m ? { subject: m[1], body: t.slice(m[0].length) } : { body: t });
+            }) : undefined}
+            exportAs={letter ? {
+              text: letter.subject ? `Subject: ${letter.subject}\n\n${letter.body}` : letter.body,
+              html: letterHtml(letter.subject ?? '', letter.body),
+              fileName: `letter-${slug(o.company)}.txt`,
+            } : null}
           />
         </>
       )}
@@ -588,7 +706,98 @@ function JobText({ o, busy, analysed, onSave, onFetch, onAnalyse }: {
   );
 }
 
-function ExpectationRow({ e }: { e: Expectation }) {
+const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'place';
+
+/** «Сейчас 40% → 67% после формулировок → до 85% с ответами». */
+function PotentialBanner({ p, busy, onApplyAll }: { p: MatchPotential; busy: boolean; onApplyAll: (scope: 'place' | 'reuse') => void }) {
+  if (p.afterAnswers <= p.now) return null;
+  return (
+    <div className="potential mt-12">
+      <div>
+        <b>Match {p.now}%</b>
+        {p.afterWording > p.now && <> → <b>{p.afterWording}%</b> with {p.wordingFixes} wording fix{p.wordingFixes === 1 ? '' : 'es'}</>}
+        {p.afterAnswers > p.afterWording && <> → up to <b>{p.afterAnswers}%</b> if you confirm {p.questions} fact{p.questions === 1 ? '' : 's'}</>}
+      </div>
+      <p className="small muted">
+        Much of a low match is wording, not experience: the posting names things differently from your resume.
+        Wording fixes reuse your confirmed facts with the same numbers.
+      </p>
+      {p.wordingFixes > 0 && (
+        <div className="flex gap-8 wrap mt-8">
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onApplyAll('place')}
+            title="The new wording is used in this place’s resume and letter only">
+            Apply {p.wordingFixes} for this vacancy
+          </button>
+          <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onApplyAll('reuse')}
+            title="Also saved to your fact bank as another wording of the same fact — every place and document can use it">
+            Apply and reuse everywhere
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FixBlock({ e, busy, onFix }: { e: Expectation; busy: boolean; onFix: (f: FixAction) => Promise<void> }) {
+  const [answer, setAnswer] = useState('');
+  const f = e.fix;
+  if (!f || e.strength === 'strong' && f.status === 'open') return null;
+  if (f.status === 'applied') {
+    return f.scope === 'reuse'
+      ? <p className="small mt-8 fix-done">✓ Using this wording — saved to your fact bank for every place</p>
+      : (
+        <p className="small mt-8 fix-done">
+          ✓ Using this wording for this vacancy only
+          {f.fact_id && <> · <button className="link" disabled={busy} onClick={() => onFix({ action: 'reuse' })}>save to fact bank too</button></>}
+        </p>
+      );
+  }
+  if (f.status === 'answered') return <p className="small mt-8 fix-done">✓ Answered{f.answer ? `: “${f.answer}”` : ''}</p>;
+  if (f.status === 'dismissed') return null;
+  if (f.reason === 'real_gap') {
+    return <p className="small mt-8 muted">Rewording can’t raise this one honestly — the letter addresses it with the bridge above instead of claiming it.</p>;
+  }
+  if (f.reason === 'wording') {
+    return (
+      <div className="fix mt-8">
+        <div className="section-label">Say it in their words</div>
+        <p style={{ fontSize: 14 }}>“{f.rewrite}”</p>
+        {f.strength_after !== e.strength && (
+          <p className="small muted">Raises this expectation to {f.strength_after === 'strong' ? 'covered' : 'partial'}.</p>
+        )}
+        <div className="flex gap-8 mt-8 wrap">
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onFix({ action: 'apply', scope: 'place' })}
+            title="Used in this place’s resume and letter only">
+            Only for this vacancy
+          </button>
+          {f.fact_id && (
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onFix({ action: 'apply', scope: 'reuse' })}
+              title="Saved to your fact bank as another wording of the same fact — future analyses and documents use it too">
+              Reuse — save to fact bank
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onFix({ action: 'dismiss' })}>Not accurate</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="fix mt-8">
+      <div className="section-label">Do you have this?</div>
+      <p style={{ fontSize: 14 }}>{f.question}</p>
+      <textarea className="textarea mt-8" style={{ minHeight: 56 }} value={answer} onChange={x => setAnswer(x.target.value)}
+        aria-label="Your answer" placeholder="Yes — and the number. Or “no”." />
+      <p className="small muted mt-8">An answer is a fact about you, so it goes to your fact bank and helps every place.</p>
+      <div className="flex gap-8 mt-8">
+        <button className="btn btn-primary btn-sm" disabled={busy || !answer.trim()}
+          onClick={async () => { await onFix({ action: 'answer', answer: answer.trim() }); }}>Answer</button>
+        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onFix({ action: 'dismiss' })}>I don’t have it</button>
+      </div>
+    </div>
+  );
+}
+
+function ExpectationRow({ e, busy, onFix }: { e: Expectation; busy: boolean; onFix: (f: FixAction) => Promise<void> }) {
   const tone = e.strength === 'strong' ? 'good' : e.strength === 'partial' ? 'mid' : 'danger';
   const label = e.strength === 'strong' ? 'covered' : e.strength === 'partial' ? 'partial' : 'gap';
   return (
@@ -611,15 +820,100 @@ function ExpectationRow({ e }: { e: Expectation }) {
           {e.gap_answer && <> — {e.gap_answer}</>}
         </p>
       )}
+      <FixBlock e={e} busy={busy} onFix={onFix} />
     </div>
   );
 }
 
-function DocumentBlock({ title, hint, doc, checks, action, busy, onRun }: {
+/**
+ * Вопросы всех разборов одним списком. Ответ на один вопрос — это новый факт
+ * в банке, поэтому он часто поднимает совпадение сразу на нескольких местах
+ * при следующем разборе; здесь он засчитывается месту, где задан.
+ */
+function QuestionsPanel({ questions, busy, onAnswer, onRebuild }: {
+  questions: OpenQuestion[]; busy: boolean;
+  onAnswer: (q: OpenQuestion, answer: string | null) => Promise<void>;
+  onRebuild: (ids: string[]) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<string[]>([]);
+  const places = new Set(questions.map(q => q.opportunity_id)).size;
+  const key = (q: OpenQuestion) => q.opportunity_id + ':' + q.index;
+  const rebuild = [...new Set(touched)];
+  return (
+    <Card>
+      <div className="card-head">
+        <div style={{ flex: 1 }}>
+          <h3>{questions.length} question{questions.length === 1 ? '' : 's'} could raise your match on {places} place{places === 1 ? '' : 's'}</h3>
+          <div className="sub">Experience you probably have but your profile doesn’t mention. Answer with a number, or say you don’t have it.</div>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Answer them'}</button>
+      </div>
+      {(open || rebuild.length > 0) && (
+        <div className="card-pad stack gap-12">
+          {open && questions.slice(0, 12).map(q => (
+            <div key={key(q)} className="fix">
+              <div className="small muted">{q.company} · {q.role_title} · {q.weight === 'must' ? 'must-have' : q.weight}</div>
+              <p style={{ fontSize: 14, margin: '4px 0' }}>{q.question}</p>
+              <div className="flex gap-8 wrap">
+                <input className="input" style={{ flex: '1 1 240px' }} aria-label={`Answer: ${q.question}`}
+                  value={answers[key(q)] ?? ''} placeholder="Yes — and the number"
+                  onChange={e => setAnswers(a => ({ ...a, [key(q)]: e.target.value }))} />
+                <button className="btn btn-primary btn-sm" disabled={busy || !(answers[key(q)] ?? '').trim()}
+                  onClick={async () => { await onAnswer(q, answers[key(q)].trim()); if (q.drafted) setTouched(t => [...t, q.opportunity_id]); }}>Answer</button>
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onAnswer(q, null)}>Don’t have it</button>
+              </div>
+            </div>
+          ))}
+          {open && questions.length > 12 && <p className="small muted">…and {questions.length - 12} more after these.</p>}
+          {rebuild.length > 0 && (
+            <div className="flex gap-8 items-center wrap">
+              <span className="small">Your answers changed {rebuild.length} place{rebuild.length === 1 ? '' : 's'} that already have documents.</span>
+              <button className="btn btn-primary btn-sm" disabled={busy}
+                onClick={async () => { await onRebuild(rebuild); setTouched([]); }}>Rebuild their documents</button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Готовые поиски LinkedIn по направлениям и странам — пользователь открывает их сам. */
+function LinkedInLinks({ profile, onPaste }: { profile: Profile; onPaste: () => void }) {
+  const links = linkedinSearchLinks(profile.perimeter, profile.geo);
+  return (
+    <Card className="card-pad">
+      <h3>Search LinkedIn yourself</h3>
+      <p className="muted small mt-8" style={{ marginBottom: 12 }}>
+        Each link searches every common title for the role — including the local-language ones —
+        posted in the last 7 days at Mid-Senior, Director and Executive level. Open, pick what fits,
+        copy the posting text and paste it back here. The search run also covers LinkedIn, but your own
+        session sees postings the run cannot.
+      </p>
+      {!links.length && <p className="small muted">Add target roles in your profile first.</p>}
+      <div className="li-links">
+        {links.map(l => (
+          <a key={l.url} className="chip chip-btn" href={l.url} target="_blank" rel="noreferrer">{l.label} ↗</a>
+        ))}
+      </div>
+      <button className="btn btn-secondary btn-sm mt-12" onClick={onPaste}>Paste postings</button>
+    </Card>
+  );
+}
+
+function DocumentBlock({ title, hint, doc, checks, review, action, busy, onRun, onSave, exportAs }: {
   title: string; hint: string; doc: string | null; checks: CheckResult[];
+  review?: DocumentReview | null;
   action: string; busy: boolean; onRun: () => void;
+  onSave?: (text: string) => Promise<void>;
+  exportAs?: { text: string; html: string; fileName: string } | null;
 }) {
   const blocked = checks.some(c => c.level === 'block');
+  const [text, setText] = useState(doc ?? '');
+  useEffect(() => setText(doc ?? ''), [doc]);
+  const dirty = !!doc && text !== doc;
   return (
     <Card>
       <div className="card-head">
@@ -638,8 +932,16 @@ function DocumentBlock({ title, hint, doc, checks, action, busy, onRun }: {
                 There are blocking remarks — don’t send this text as is.
               </p>
             )}
-            <textarea className="textarea" style={{ minHeight: 260, fontSize: 14, lineHeight: 1.65 }}
-              defaultValue={doc} aria-label={title} />
+            <ReviewReport review={review} />
+            <textarea className="textarea mt-12" style={{ minHeight: 260, fontSize: 14, lineHeight: 1.65 }}
+              value={text} onChange={e => setText(e.target.value)} aria-label={title} />
+            <div className="flex gap-8 wrap mt-8 items-center">
+              {exportAs && <DocActions text={dirty ? text : exportAs.text} html={exportAs.html} fileName={exportAs.fileName} />}
+              {onSave && dirty && (
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onSave(text)}>Save edits and re-check</button>
+              )}
+              {!onSave && dirty && <span className="small muted">Edits are kept for copying; rebuild to re-check.</span>}
+            </div>
             <div className="section-label mt-16">Checks</div>
             <Checks items={checks} />
           </>

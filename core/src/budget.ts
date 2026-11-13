@@ -34,6 +34,9 @@ export const TYPICAL_COST: Partial<Record<Operation, number>> = {
   check: 0.003,
   extract: 0.002,
   classify: 0.001,
+  review: 0.012,
+  coach: 0.008,
+  refine: 0.001,
 };
 
 export function monthKey(d: Date | string = new Date()): string {

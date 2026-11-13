@@ -18,6 +18,7 @@ import {
   normalize, words, wordCount, findPhrase, containsPhrase, hasNumber,
   extractNumbers, sentences, paragraphs,
 } from './text.ts';
+import { checkStyle } from './style.ts';
 
 export interface CheckContext {
   cfg?: HuntbackConfig;
@@ -239,6 +240,7 @@ export function checkResume(doc: ResumeDoc, ctx: CheckContext = {}): CheckResult
     }
   }
 
+  out.push(...checkStyle(text, { lang: ctx.language ?? 'en', items: bullets, itemName: 'bullet' }));
   out.push(...checkSpelling(text, ctx));
   return out;
 }
@@ -286,8 +288,12 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
   }
   const companyText = [ctx.opportunity?.signal, ctx.opportunity?.jd_text].filter(Boolean).join(' ');
   const companyNumbers = new Set(extractNumbers(companyText));
+  // Длительность встречи в просьбе («a 20-minute call») — не утверждение о
+  // кандидате и не о компании; без этой оговорки почти каждое письмо
+  // блокировалось из-за собственной просьбы.
+  const meetingNumbers = new Set([...body.matchAll(/\b(\d{1,3})[\s-]?(?:minutes?|min)\b/gi)].map(m => m[1]));
   for (const n of extractNumbers(body)) {
-    if (known.has(n) || companyNumbers.has(n)) continue;
+    if (known.has(n) || companyNumbers.has(n) || meetingNumbers.has(n)) continue;
     // Год в пределах живой памяти — почти всегда дата сигнала; всё равно требуем источник.
     out.push({
       rule: 'number_consistency', level: 'block',
@@ -366,6 +372,7 @@ export function checkLetter(doc: LetterDoc, kind: OpportunityKind, ctx: CheckCon
     }
   }
 
+  out.push(...checkStyle(body, { lang: ctx.language ?? 'en', items: sentences(body), itemName: 'sentence' }));
   out.push(...checkSpelling(body, ctx));
   return out;
 }

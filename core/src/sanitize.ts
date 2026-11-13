@@ -10,13 +10,17 @@ import type {
   Analysis, Expectation, Blocker, Weight, Strength, GapClass, BridgeType,
   BlockerKind, FormatVariant, ResumeDoc, LetterDoc, Fact, ScaleTag, Cefr,
 } from './types.ts';
+import { canonicalJobUrl, isLinkedInUrl, linkedinJobId } from './titles.ts';
 import {
   BRIDGE_TYPES, BLOCKER_KINDS, FORMAT_VARIANTS, SCALE_TAGS, CEFR_ORDER,
 } from './types.ts';
 
 const str = (v: unknown, max = 4000): string =>
   typeof v === 'string' ? v.trim().slice(0, max) : '';
+// null, '' и false — «числа нет», а не ноль: Number(null) === 0, и без этой
+// оговорки каждый факт без числа становился «квантифицированным» со значением 0.
 const num = (v: unknown): number | null => {
+  if (v == null || v === '' || typeof v === 'boolean') return null;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : null;
 };
@@ -48,6 +52,9 @@ export function sanitizeExpectation(raw: unknown): Expectation | null {
     gap_class,
     bridge: gap_class === 'soft' ? oneOfOrNull(o.bridge, BRIDGE_TYPES) : null,
     gap_answer: str(o.gap_answer, 400),
+    // Правку проверяет fixes.ts/sanitizeFix — там, где известны факты и профиль.
+    // Здесь только сохраняется сырой ответ, чтобы его было что проверять.
+    fix: (o.fix && typeof o.fix === 'object' ? o.fix : null) as Expectation['fix'],
   };
 }
 
@@ -162,9 +169,12 @@ export function sanitizeDiscoverItem(raw: unknown): DiscoverItem | null {
   const o = (raw || {}) as Record<string, unknown>;
   const company = str(o.company, 200);
   const role_title = str(o.role_title, 200);
-  const source_url = str(o.source_url, 600);
+  const source_url = canonicalJobUrl(str(o.source_url, 600));
   if (!company || !role_title) return null;
   const kind = oneOf(o.kind, ['vacancy', 'hypothesis'] as const, 'hypothesis');
+  // Вакансия с LinkedIn без id — это страница поиска, компании или пост:
+  // по ней нельзя ни откликнуться, ни получить текст требований.
+  if (kind === 'vacancy' && isLinkedInUrl(source_url) && !linkedinJobId(source_url)) return null;
   const signal = str(o.signal, 600);
   // Гипотеза обязана опираться на датированный сигнал (§10.3) — иначе это не гипотеза.
   if (kind === 'hypothesis' && (!signal || !str(o.signal_date, 20) || !source_url)) return null;

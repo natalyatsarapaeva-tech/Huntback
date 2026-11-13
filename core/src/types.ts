@@ -68,6 +68,34 @@ export interface Fact {
   quantified: boolean;
   source_hint: string;
   confirmed: boolean;
+  /** Подсказка разбора: наводящий вопрос или предложенная формулировка. */
+  review?: FactReview | null;
+  /**
+   * Что пользователь сам дописал к факту (ответ на вопрос, слова из чата с
+   * коучем). Это второй источник наравне с резюме: число, которого нет в
+   * резюме, но есть здесь, — подтверждённое, а не выдуманное.
+   */
+  user_input?: string | null;
+  /**
+   * Другие формулировки ТОГО ЖЕ факта, принятые пользователем для повторного
+   * использования (из правок совпадения «переиспользовать»). Исходный текст
+   * факта не меняется; числа в формулировках — те же, это проверено при правке.
+   */
+  wordings?: string[];
+}
+
+/** Разбор факта (§10.4a в редакции 1.3): цитата из резюме + что с ней сделать. */
+export type FactReviewKind = 'ok' | 'question' | 'rewrite';
+export type FactReviewStatus = 'pending' | 'accepted' | 'answered' | 'dismissed';
+export interface FactReview {
+  kind: FactReviewKind;
+  /** Наводящий вопрос — когда число или масштаб, вероятно, есть, но не названы. */
+  question: string;
+  /** Предложенная формулировка «действие → как → результат». */
+  rewrite: { action: string; how: string; result: string } | null;
+  /** Почему так: одна строка для пользователя. */
+  why: string;
+  status: FactReviewStatus;
 }
 
 // ── Место (§7 opportunities) ────────────────────────────────────────────────
@@ -138,7 +166,38 @@ export interface Expectation {
   gap_class: GapClass;
   bridge: BridgeType | null;
   gap_answer: string;
+  /** Как поднять это ожидание: переформулировать факт или дописать недостающий. */
+  fix?: ExpectationFix | null;
 }
+
+/**
+ * Причина неполного совпадения. «40%» часто означает не отсутствие опыта, а
+ * отсутствие формулировки работодателя: опыт есть, слов нет.
+ *   wording      — опыт есть в банке/резюме, нужна формулировка в терминах вакансии;
+ *   missing_fact — опыт, вероятно, есть, но не записан: нужен ответ пользователя;
+ *   real_gap     — опыта действительно нет; закрывается мостом в письме, не правкой.
+ */
+export type GapReason = 'wording' | 'missing_fact' | 'real_gap';
+export type FixStatus = 'open' | 'applied' | 'answered' | 'dismissed';
+export interface ExpectationFix {
+  reason: GapReason;
+  /** Факт, который переформулируется (wording). */
+  fact_id: string | null;
+  /** Новая формулировка факта в терминах работодателя (wording). */
+  rewrite: string;
+  /** Вопрос пользователю (missing_fact). */
+  question: string;
+  /** Ожидаемая сила совпадения после правки. */
+  strength_after: Strength;
+  status: FixStatus;
+  answer?: string;
+  /**
+   * Где действует принятая формулировка: только в этом месте или
+   * переиспользуется — тогда она сохранена в банке фактов у факта `fact_id`.
+   */
+  scope?: FixScope;
+}
+export type FixScope = 'place' | 'reuse';
 
 export interface Blocker {
   kind: BlockerKind;
@@ -211,10 +270,36 @@ export interface LetterDoc {
 
 // ── Учёт (§7 usage_log, §10.9) ──────────────────────────────────────────────
 export type Operation =
-  | 'discover' | 'analyse' | 'resume' | 'letter' | 'extract' | 'audit' | 'check' | 'ingest' | 'classify';
+  | 'discover' | 'analyse' | 'resume' | 'letter' | 'extract' | 'audit' | 'check' | 'ingest' | 'classify'
+  | 'review' | 'coach' | 'refine';
 export const OPERATIONS: Operation[] = [
   'discover', 'analyse', 'resume', 'letter', 'extract', 'audit', 'check', 'ingest', 'classify',
+  'review', 'coach', 'refine',
 ];
+
+// ── Ревью документа (писатель → проверяющий) ───────────────────────────────
+export type ReviewIssueType = 'duplication' | 'factual' | 'cliche' | 'ai_ism' | 'far_fetched' | 'other';
+export const REVIEW_ISSUE_TYPES: ReviewIssueType[] = ['duplication', 'factual', 'cliche', 'ai_ism', 'far_fetched', 'other'];
+export interface ReviewIssue {
+  type: ReviewIssueType;
+  /** Дословная цитата из документа. */
+  quote: string;
+  problem: string;
+  fix: string;
+  severity: 'high' | 'low';
+}
+export interface ReviewRound {
+  round: number;
+  verdict: 'pass' | 'revise';
+  issues: ReviewIssue[];
+  /** Замечания кода (стоп-лист, ИИ-измы, повторы), переданные писателю вместе с ревью. */
+  code_issues: string[];
+}
+export interface DocumentReview {
+  rounds: ReviewRound[];
+  /** Сколько раз писатель переписывал текст после ревью. */
+  rewrites: number;
+}
 
 export interface UsageEntry {
   operation: Operation;

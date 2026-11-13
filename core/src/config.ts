@@ -21,6 +21,12 @@ export interface ModelsConfig {
   check: string;
   ingest: string;
   classify: string;
+  /** Агент-проверяющий документов. */
+  review: string;
+  /** Чат с коучем резюме. */
+  coach: string;
+  /** Переписать факт по ответу пользователя, переоценить одно ожидание. */
+  refine: string;
   /** Ступень ниже — куда деградировать при 429/503 (§10.1). */
   fallback: Record<string, string>;
   /** Сколько веб-запросов Discover делает одновременно (§9.1 в редакции 1.2). */
@@ -37,6 +43,9 @@ export const DEFAULT_MODELS: ModelsConfig = {
   check: 'gpt-5.6-luna',
   ingest: 'gpt-5.6-luna',
   classify: 'gpt-5.6-luna',
+  review: 'gpt-5.6-terra',
+  coach: 'gpt-5.6-terra',
+  refine: 'gpt-5.6-luna',
   fallback: {
     'gpt-6-astra': 'gpt-5.6-sol',
     'gpt-5.6-sol': 'gpt-5.6-terra',

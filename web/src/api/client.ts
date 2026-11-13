@@ -1,7 +1,7 @@
 // Клиент API воркера. Мутирующие запросы несут CSRF-заголовок из
 // non-HttpOnly cookie (double submit, §5.3).
 
-import type { Api, RunEvent, SearchMode } from './types.ts';
+import type { Api, RunEvent, SearchMode, DocEvent, GeneratedDoc, MasterResume } from './types.ts';
 
 function csrf(): string {
   const hit = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith('csrf='));
@@ -46,11 +46,11 @@ const post = <T>(p: string, body?: unknown) =>
  * умеет только GET и не может послать CSRF-заголовок, а мутирующий запрос без
  * него воркер отклонит. Поэтому обычный POST и чтение тела ридером.
  */
-async function streamNdjson(path: string, payload: unknown, onEvent: (e: RunEvent) => void): Promise<void> {
+async function streamNdjson<E = RunEvent>(path: string, payload: unknown, onEvent: (e: E) => void): Promise<void> {
   const res = await fetch(`/api${path}`, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'X-Huntback-CSRF': csrf() },
+    headers: { 'Content-Type': 'application/json', 'X-Huntback-CSRF': csrf(), Accept: 'application/x-ndjson' },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -72,12 +72,31 @@ async function streamNdjson(path: string, payload: unknown, onEvent: (e: RunEven
     buffer = lines.pop() ?? '';
     for (const line of lines) {
       if (!line.trim()) continue;
-      try { onEvent(JSON.parse(line) as RunEvent); } catch { /* битую строку пропускаем */ }
+      try { onEvent(JSON.parse(line) as E); } catch { /* битую строку пропускаем */ }
     }
   }
   if (buffer.trim()) {
-    try { onEvent(JSON.parse(buffer) as RunEvent); } catch { /* пусто */ }
+    try { onEvent(JSON.parse(buffer) as E); } catch { /* пусто */ }
   }
+}
+
+/**
+ * Генерация документа со стримом: черновик, два ревью, переписывания. Результат
+ * приходит в последнем событии; ошибка — там же, а не обрывом соединения.
+ */
+async function streamResult<T>(path: string, payload: unknown, onEvent?: (e: DocEvent) => void): Promise<T> {
+  let result: T | undefined;
+  let error: string | undefined;
+  await streamNdjson<DocEvent>(path, payload, e => {
+    if (e.stage === 'done') {
+      if (e.error) error = e.error; else result = e.result as T;
+      return;
+    }
+    onEvent?.(e);
+  });
+  if (error) throw new ApiFailure('generation_failed', error);
+  if (result === undefined) throw new ApiFailure('no_result', 'The connection closed before the document was ready. Open the place again — it may already be saved.');
+  return result;
 }
 
 export const httpApi: Api = {
@@ -97,8 +116,18 @@ export const httpApi: Api = {
   importJob: input => post('/opportunities/import', input),
   confirmImport: r => post('/opportunities/import/confirm', r),
   analyse: id => post(`/opportunities/${id}/analyse`),
-  makeResume: id => post(`/opportunities/${id}/resume`),
-  makeLetter: (id, tone) => post(`/opportunities/${id}/letter`, { tone }),
+  makeResume: (id, onEvent) => streamResult<GeneratedDoc>(`/opportunities/${id}/resume`, {}, onEvent),
+  makeLetter: (id, tone, onEvent) => streamResult<GeneratedDoc>(`/opportunities/${id}/letter`, { tone }, onEvent),
+  answerFact: (id, answer) => post(`/profile/facts/${id}/answer`, { answer }),
+  coach: () => call('/coach'),
+  coachMessage: (text, topic_id) => post('/coach/message', { text, topic_id }),
+  coachSkip: topic_id => post('/coach/skip', { topic_id }),
+  coachProposal: (id, action) => post(`/coach/proposals/${id}`, { action }),
+  coachReset: () => post('/coach/reset'),
+  buildMasterResume: onEvent => streamResult<MasterResume>('/profile/master-resume', {}, onEvent),
+  importBatch: text => post('/opportunities/import/batch', { text }),
+  questions: () => call('/questions'),
+  fixExpectation: (id, b) => post(`/opportunities/${id}/fix`, b),
   saveDocument: (id, patch) => call(`/documents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   runSearch: (mode: SearchMode, onEvent) => streamNdjson('/runs', { mode }, onEvent),
   usage: () => call('/usage'),

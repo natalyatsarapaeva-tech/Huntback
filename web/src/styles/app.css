@@ -357,3 +357,81 @@ table.t td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Выход: в шапке всегда, в том числе на телефоне, где прячется всё остальное справа. */
 .header-logout { flex: none; min-height: 44px; }
 @media (max-width: 720px) { .header-logout { margin-left: auto; } }
+
+/* ── Разбор фактов по одному ────────────────────────────────────────────── */
+.spacer { flex: 1; }
+.review { display: flex; flex-direction: column; gap: 14px; }
+.review-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.review-bar { flex: 1 1 100%; height: 5px; background: var(--slate-100); border-radius: 999px; overflow: hidden; }
+.review-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+.review-card { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.review-quote, .review-fact { border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px; background: var(--surface); }
+.review-quote { background: var(--surface-alt); }
+.review-quote blockquote { margin: 0 0 6px; font-family: var(--font-head); font-size: 16px; line-height: 1.45; }
+.review-suggest { display: flex; flex-direction: column; gap: 12px; }
+.suggest { border: 1px solid var(--border-accent); background: var(--surface-accent); border-radius: var(--r-md); padding: 14px; }
+@media (max-width: 720px) { .review-card { grid-template-columns: 1fr; } }
+
+/* ── Совпадение: потенциал и правки ─────────────────────────────────────── */
+.potential { border: 1px solid var(--border-accent); background: var(--surface-accent); border-radius: var(--r-md); padding: 12px 14px; font-size: 14px; }
+.potential p { margin: 4px 0 0; }
+.fix { border-left: 3px solid var(--accent); padding: 8px 0 4px 12px; }
+.fix p { margin: 0; }
+.fix-done { color: var(--good); }
+
+/* ── Отчёт ревью документа ──────────────────────────────────────────────── */
+.review-report { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-alt); }
+.review-report-head {
+  all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 10px; align-items: center;
+  width: 100%; padding: 10px 12px; font-size: 13.5px; min-height: 44px;
+}
+.review-report-head > span:nth-child(2) { flex: 1; }
+.review-report-head:focus-visible { outline: 2px solid var(--focus); border-radius: var(--r-md); }
+.review-badge { color: var(--good); font-weight: 700; letter-spacing: -2px; }
+.review-rounds { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 10px; }
+.review-round ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Коуч ───────────────────────────────────────────────────────────────── */
+.coach { display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start; }
+.coach-chat { overflow: hidden; }
+.chat { display: flex; flex-direction: column; gap: 10px; padding: 16px; max-height: 60vh; overflow-y: auto; }
+.msg { max-width: 85%; padding: 10px 13px; border-radius: var(--r-md); font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; }
+.msg--coach { background: var(--surface-alt); border: 1px solid var(--border); align-self: flex-start; }
+.msg--user { background: var(--accent-soft); color: var(--accent-text); align-self: flex-end; margin-left: auto; }
+.chat > div { display: flex; flex-direction: column; gap: 8px; }
+.proposal {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; align-self: flex-start; max-width: 92%;
+  border: 1px dashed var(--border-accent); border-radius: var(--r-md); padding: 8px 10px; background: var(--surface);
+}
+.proposal-text { flex: 1 1 200px; font-size: 13.5px; }
+.chat-input { border-top: 1px solid var(--border); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.chat-input .textarea { min-height: 64px; }
+.agenda { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.agenda li > span { margin-right: 6px; }
+.agenda li .btn { min-height: 28px; padding: 2px 8px; }
+.agenda--current { font-weight: 600; color: var(--accent-text); }
+@media (max-width: 900px) { .coach { grid-template-columns: 1fr; } .coach-side { order: -1; } }
+
+/* ── LinkedIn ───────────────────────────────────────────────────────────── */
+.li-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.link { all: unset; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
+
+/* Грид-ячейка по умолчанию не уже своего содержимого (min-width: auto) —
+ * одна длинная строка раздвигала карточку места за край экрана на 375 px. */
+.place-detail, .coach-main { min-width: 0; }
+/* Цели касания ≥ 44 px (§13.3): чекбокс факта и ссылка в тексте рисуются
+ * маленькими, но нажимаются по полной зоне — тем же приёмом, что .btn-sm. */
+.fact .checkbox { height: 44px; margin: -12px 0; }
+.link { position: relative; }
+.link::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 44px; }
+/* Четыре раздела в шапке на 375 px: без этого «Spending» обрезался до «Sp». */
+@media (max-width: 420px) {
+  .header-in { gap: 6px; padding: 0 12px; }
+  .nav { margin-left: 0; gap: 0; }
+  .nav-item { padding: 9px 7px; font-size: 13px; }
+  .header-logout { padding-left: 6px; padding-right: 6px; }
+}
+
+/* Переиспользуемые формулировки факта */
+.wording { display: flex; align-items: center; gap: 8px; font-size: 13px; padding-left: 10px; border-left: 2px solid var(--border-accent); margin-top: 4px; }
+.wording > span { flex: 1; }

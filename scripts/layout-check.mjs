@@ -11,7 +11,8 @@ import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
 const BASE = process.env.HUNTBACK_URL || 'http://127.0.0.1:4173/';
-const CHROME = process.env.PLAYWRIGHT_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// Без переменной — браузер, который Playwright находит сам.
+const CHROME = process.env.PLAYWRIGHT_CHROME || undefined;
 const shotsAt = process.argv.indexOf('--shots');
 const SHOTS = shotsAt === -1 ? null : process.argv[shotsAt + 1];
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -34,10 +35,18 @@ for (const width of WIDTHS) {
   const screens = [
     ['places', null],
     ['blocker', '.place:nth-of-type(2)'],
+    // Место с правками совпадения: формулировки, вопросы, потенциал.
+    ['fixes', ['.back-to-list:visible', '.place:nth-of-type(1)']],
+    ['coach', 'button.nav-item:has-text("Coach")'],
+    ['fact-review', 'button.nav-item:has-text("Profile")'],
   ];
   for (const [name, selector] of screens) {
-    if (selector) {
-      await page.locator(selector).click();
+    // Шаг — селектор или цепочка селекторов; «:visible» необязателен (на широком
+    // экране кнопки «назад к списку» нет — пропускаем).
+    for (const sel of selector ? [selector].flat() : []) {
+      const loc = page.locator(sel);
+      if (sel.endsWith(':visible') && !(await loc.count())) continue;
+      await loc.first().click();
       await page.waitForTimeout(600);
     }
     const r = await page.evaluate(() => {

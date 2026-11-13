@@ -4,7 +4,7 @@
 
 import {
   type Profile, type Fact, type Opportunity, type Analysis, type UsageEntry,
-  type HuntbackConfig, resolveConfig, companyKey,
+  type HuntbackConfig, type CoachMessage, type CoachProposal, resolveConfig, companyKey,
 } from '@huntback/core';
 import { type Env, nowIso, uid } from './env.ts';
 
@@ -65,7 +65,17 @@ export async function getProfile(env: Env, userId: string): Promise<Profile> {
   };
 }
 
+/**
+ * Строка профиля создаётся при первом входе, но сброс «профиль» её удаляет.
+ * Все записи ниже — UPDATE, и без строки они молча ничего не сохраняли бы:
+ * повторный онбординг после сброса терял резюме.
+ */
+async function ensureProfileRow(env: Env, userId: string): Promise<void> {
+  await env.DB.prepare('INSERT OR IGNORE INTO profiles (user_id, updated_at) VALUES (?,?)').bind(userId, nowIso()).run();
+}
+
 export async function saveProfile(env: Env, userId: string, p: Partial<Profile>): Promise<void> {
+  await ensureProfileRow(env, userId);
   const cur = await getProfile(env, userId);
   const n = { ...cur, ...p };
   await env.DB.prepare(
@@ -82,6 +92,7 @@ export async function saveProfile(env: Env, userId: string, p: Partial<Profile>)
 }
 
 export async function saveAudit(env: Env, userId: string, audit: unknown): Promise<void> {
+  await ensureProfileRow(env, userId);
   await env.DB.prepare('UPDATE profiles SET audit=?, updated_at=? WHERE user_id=?')
     .bind(JSON.stringify(audit), nowIso(), userId).run();
 }
@@ -102,6 +113,8 @@ export async function listFacts(env: Env, userId: string): Promise<Fact[]> {
     metric_value: r.metric_value as number | null, metric_unit: r.metric_unit as string | null,
     scale_tags: j(r.scale_tags, []), domain_tags: j(r.domain_tags, []),
     quantified: !!r.quantified, source_hint: String(r.source_hint), confirmed: !!r.confirmed,
+    review: j(r.review, null), user_input: (r.user_input as string | null) ?? null,
+    wordings: j<string[]>(r.wordings, []),
   }));
 }
 
@@ -110,14 +123,27 @@ export async function replaceFacts(env: Env, userId: string, facts: Fact[]): Pro
   for (const f of facts) {
     stmts.push(env.DB.prepare(
       `INSERT OR REPLACE INTO facts (id,user_id,company,role_title,period_from,period_to,action,how,result,
-        metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).bind(f.id, userId, f.company ?? null, f.role_title ?? null, f.period_from ?? null, f.period_to ?? null,
-      f.action, f.how ?? null, f.result ?? null, f.metric_value ?? null, f.metric_unit ?? null,
-      JSON.stringify(f.scale_tags), JSON.stringify(f.domain_tags), f.quantified ? 1 : 0,
-      f.source_hint, f.confirmed ? 1 : 0, nowIso()));
+        metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,review,user_input,created_at,wordings)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).bind(...factBinds(userId, f)));
   }
   await env.DB.batch(stmts);
+}
+
+const factBinds = (userId: string, f: Fact) => [f.id, userId, f.company ?? null, f.role_title ?? null,
+  f.period_from ?? null, f.period_to ?? null,
+  f.action, f.how ?? null, f.result ?? null, f.metric_value ?? null, f.metric_unit ?? null,
+  JSON.stringify(f.scale_tags), JSON.stringify(f.domain_tags), f.quantified ? 1 : 0,
+  f.source_hint, f.confirmed ? 1 : 0, f.review ? JSON.stringify(f.review) : null, f.user_input ?? null, nowIso(),
+  JSON.stringify(f.wordings ?? [])];
+
+/** Новый факт — из ответа пользователя или из чата с коучем. */
+export async function insertFact(env: Env, userId: string, f: Fact): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO facts (id,user_id,company,role_title,period_from,period_to,action,how,result,
+      metric_value,metric_unit,scale_tags,domain_tags,quantified,source_hint,confirmed,review,user_input,created_at,wordings)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(...factBinds(userId, f)).run();
 }
 
 export async function patchFact(env: Env, userId: string, id: string, patch: Partial<Fact>): Promise<void> {
@@ -125,10 +151,13 @@ export async function patchFact(env: Env, userId: string, id: string, patch: Par
   if (!cur) return;
   const n = { ...cur, ...patch };
   await env.DB.prepare(
-    `UPDATE facts SET action=?, how=?, result=?, metric_value=?, metric_unit=?, quantified=?, confirmed=?
+    `UPDATE facts SET action=?, how=?, result=?, metric_value=?, metric_unit=?, quantified=?, confirmed=?,
+       review=?, user_input=?, scale_tags=?, wordings=?
      WHERE id=? AND user_id=?`,
   ).bind(n.action, n.how ?? null, n.result ?? null, n.metric_value ?? null, n.metric_unit ?? null,
-    n.metric_value != null || /\d/.test(String(n.result ?? '')) ? 1 : 0, n.confirmed ? 1 : 0, id, userId).run();
+    n.metric_value != null || /\d/.test(String(n.result ?? '')) ? 1 : 0, n.confirmed ? 1 : 0,
+    n.review ? JSON.stringify(n.review) : null, n.user_input ?? null, JSON.stringify(n.scale_tags ?? []),
+    JSON.stringify(n.wordings ?? []), id, userId).run();
 }
 
 export async function deleteFact(env: Env, userId: string, id: string): Promise<void> {
@@ -238,7 +267,7 @@ export async function getAnalysis(
 export async function saveDocument(
   env: Env, userId: string, opportunityId: string,
   d: { kind: 'resume' | 'letter'; subject?: string; body: string; format_variant?: string;
-       facts_used: string[]; checks: unknown; model?: string },
+       facts_used: string[]; checks: unknown; model?: string; review?: unknown },
 ): Promise<string> {
   const prev = await env.DB.prepare(
     'SELECT MAX(version) AS v FROM documents WHERE opportunity_id=? AND kind=?',
@@ -246,11 +275,11 @@ export async function saveDocument(
   const id = uid();
   await env.DB.prepare(
     `INSERT INTO documents (id,opportunity_id,user_id,kind,version,subject,body,edited_by_user,
-      format_variant,facts_used,checks,model,created_at)
-     VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?)`,
+      format_variant,facts_used,checks,model,review,created_at)
+     VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?)`,
   ).bind(id, opportunityId, userId, d.kind, (prev?.v ?? 0) + 1, d.subject ?? null, d.body,
     d.format_variant ?? null, JSON.stringify(d.facts_used), JSON.stringify(d.checks),
-    d.model ?? null, nowIso()).run();
+    d.model ?? null, d.review ? JSON.stringify(d.review) : null, nowIso()).run();
   return id;
 }
 
@@ -268,7 +297,39 @@ export async function latestDocuments(env: Env, userId: string, opportunityId: s
     subject: r.subject as string | null, body: String(r.body),
     edited_by_user: !!r.edited_by_user, format_variant: r.format_variant as string | null,
     facts_used: j<string[]>(r.facts_used, []), checks: j(r.checks, []), created_at: String(r.created_at),
+    review: j(r.review, null),
   }));
+}
+
+// ── Мастер-резюме и коуч ────────────────────────────────────────────────────
+export async function getMasterResume(env: Env, userId: string): Promise<unknown | null> {
+  const r = await env.DB.prepare('SELECT master_resume FROM profiles WHERE user_id=?').bind(userId)
+    .first<{ master_resume: string }>();
+  return j<unknown>(r?.master_resume, null);
+}
+
+export async function saveMasterResume(env: Env, userId: string, doc: unknown): Promise<void> {
+  await ensureProfileRow(env, userId);
+  await env.DB.prepare('UPDATE profiles SET master_resume=?, updated_at=? WHERE user_id=?')
+    .bind(JSON.stringify(doc), nowIso(), userId).run();
+}
+
+export interface CoachState { messages: CoachMessage[]; proposals: CoachProposal[]; skipped: string[] }
+
+export async function getCoach(env: Env, userId: string): Promise<CoachState> {
+  const r = await env.DB.prepare('SELECT * FROM coach_sessions WHERE user_id=?').bind(userId)
+    .first<Record<string, unknown>>();
+  return { messages: j(r?.messages, []), proposals: j(r?.proposals, []), skipped: j(r?.skipped, []) };
+}
+
+export async function saveCoach(env: Env, userId: string, s: CoachState): Promise<void> {
+  // Хранится хвост беседы: старше 60 реплик модель всё равно не видит.
+  await env.DB.prepare(
+    `INSERT INTO coach_sessions (user_id, messages, proposals, skipped, updated_at) VALUES (?,?,?,?,?)
+     ON CONFLICT(user_id) DO UPDATE SET messages=excluded.messages, proposals=excluded.proposals,
+       skipped=excluded.skipped, updated_at=excluded.updated_at`,
+  ).bind(userId, JSON.stringify(s.messages.slice(-60)), JSON.stringify(s.proposals.slice(-60)),
+    JSON.stringify(s.skipped), nowIso()).run();
 }
 
 // ── Учёт ────────────────────────────────────────────────────────────────────
@@ -327,6 +388,7 @@ export async function resetUserData(env: Env, userId: string, scope: ResetScope)
     stmts.push(
       env.DB.prepare('DELETE FROM facts WHERE user_id=?').bind(userId),
       env.DB.prepare('DELETE FROM profiles WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM coach_sessions WHERE user_id=?').bind(userId),
     );
   }
   if (budget) {

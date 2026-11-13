@@ -16,7 +16,10 @@
     "check:layout": "node scripts/layout-check.mjs",
     "verify": "npm run test && npm run typecheck && npm run build",
     "deploy": "VITE_DEMO_ONLY= VITE_BASE= npm run build && npm run deploy -w worker",
-    "migrate": "npm run migrate -w worker"
+    "migrate": "npm run migrate -w worker",
+    "e2e:stub": "node scripts/e2e/openai-stub.mjs 8799",
+    "e2e:smoke": "node scripts/e2e/api-smoke.mjs",
+    "e2e:journey": "node scripts/e2e/user-journey.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260908.1",

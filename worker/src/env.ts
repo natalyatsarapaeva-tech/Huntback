@@ -6,6 +6,11 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   TOKEN_ENC_KEY: string;
+  /**
+   * Только для локальной проверки (wrangler dev + заглушка OpenAI в
+   * scripts/e2e). В проде не задаётся, и запросы идут в api.openai.com.
+   */
+  OPENAI_BASE_URL?: string;
   // SESSION_PEPPER (§6) сюда вернётся вместе с логированием идентификаторов
   // сессий. Пока таких логов нет, и секрет не заводится: обязательный секрет,
   // который ничего не делает, — это ложный шаг в инструкции по настройке.

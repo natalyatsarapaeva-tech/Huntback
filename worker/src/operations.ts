@@ -7,6 +7,9 @@ import {
   sanitizeAnalysis, sanitizeFact, sanitizeIngest, sanitizeResume, sanitizeLetter,
   sanitizeDiscoverItem, computeScore, reconcileBlockers, demoteUnverified,
   sourceHintFound, auditProfile, checkResume, checkLetter, applySwapResult, parseCefr,
+  titleVariants, describeTitleVariants, isLinkedInUrl, linkedinJobId, canonicalLinkedInJobUrl,
+  extractLinkedInJob, cleanJobText, sanitizeFix, sanitizeFactReview,
+  type ResumeDoc, type LetterDoc,
 } from '@huntback/core';
 import { type Env, ApiError, uid } from './env.ts';
 import { callModel, mapWithConcurrency } from './ai.ts';
@@ -31,6 +34,7 @@ function stablePrefix(profile: Profile, facts: Fact[]): string {
   const compact = confirmed.filter(f => !f.quantified);
   return [
     'You work with ONE candidate. Below are the profile and the fact bank; they do not change between requests. Always answer in English.',
+    '"also phrased as" lists wordings of the same fact the candidate approved for reuse: prefer the one closest to the employer\'s language; never count them as separate achievements.',
     '',
     '=== PROFILE ===',
     profile.resume_text,
@@ -45,12 +49,18 @@ function stablePrefix(profile: Profile, facts: Fact[]): string {
     '',
     // Селективный дамп (приём twin): важное полностью, остальное строкой.
     '=== FACT BANK (confirmed, quantified) ===',
-    ...full.map(f => [f.id, f.action, f.how ?? '', f.result ?? '', '[' + f.source_hint + ']'].join(' · ')),
+    ...full.map(f => [f.id, f.action, f.how ?? '', f.result ?? '', '[' + f.source_hint + ']'].join(' · ') + alsoPhrased(f)),
     '',
     '=== FACT BANK (confirmed, without a number) ===',
-    ...compact.map(f => f.id + ' · ' + f.action),
+    ...compact.map(f => f.id + ' · ' + f.action + alsoPhrased(f)),
   ].filter(x => x !== '').join('\n');
 }
+
+/**
+ * Формулировки, которые пользователь разрешил переиспользовать: тот же факт
+ * другими словами (обычно — словами работодателя из прошлого разбора).
+ */
+const alsoPhrased = (f: Fact) => (f.wordings?.length ? ' || also phrased as: ' + f.wordings.join(' | ') : '');
 
 /**
  * Классификатор (§10.2 в редакции 1.2): дешёвый вызов сужает внимание дорогого.
@@ -96,14 +106,22 @@ export async function runAudit(ctx: Ctx, profile: Profile, existing: Fact[]) {
   const tol = ctx.cfg.thresholds.sourceHintTolerance;
   // Факт без подтверждённой цитаты отбрасывается МОЛЧА (§10.4a).
   const facts = (data.facts ?? [])
-    .map(raw => sanitizeFact(raw, uid))
+    .map(raw => {
+      const f = sanitizeFact(raw, uid);
+      // Подсказка разбора: вопрос или формулировка, с проверкой, что формулировка
+      // не принесла чисел, которых нет в резюме.
+      if (f) f.review = sanitizeFactReview((raw as Record<string, unknown>).review, f, [haystack]);
+      return f;
+    })
     .filter((f): f is Fact => f !== null && sourceHintFound(haystack, f.source_hint, tol));
 
-  // Ранее подтверждённые факты переживают повторный аудит.
+  // Ранее подтверждённые факты переживают повторный аудит — вместе с правками
+  // пользователя и состоянием разбора: пересчёт аудита не должен откатывать
+  // уже принятые формулировки и ответы.
   const confirmedBefore = new Map(existing.filter(f => f.confirmed).map(f => [f.source_hint, f]));
   const merged = facts.map(f => {
     const prev = confirmedBefore.get(f.source_hint);
-    return prev ? { ...f, id: prev.id, confirmed: true } : f;
+    return prev ? { ...prev, confirmed: true } : f;
   });
 
   const roles = (data.roles ?? []).map(r => {
@@ -166,6 +184,23 @@ export async function runAnalyse(
     return sourceHintFound(haystackOf(profile), hint, ctx.cfg.thresholds.sourceHintTolerance);
   });
 
+  // Правки: честность формулировок проверяет ядро. Ожидание без правки от
+  // модели всё равно получает путь: жёсткий гэп — честный «нет опыта»,
+  // остальное — вопрос пользователю.
+  analysis.expectations = analysis.expectations.map(e => {
+    let fix = sanitizeFix(e.fix, e, facts, profile);
+    if (!fix && e.strength !== 'strong') {
+      fix = e.gap_class === 'hard'
+        ? { reason: 'real_gap', fact_id: null, rewrite: '', question: '', strength_after: e.strength, status: 'open' }
+        : {
+          reason: 'missing_fact', fact_id: null, rewrite: '', status: 'open',
+          question: `Do you have experience with this: “${e.expectation}”? Describe it in a sentence or two, with numbers if you have them.`,
+          strength_after: 'strong',
+        };
+    }
+    return { ...e, fix };
+  });
+
   // Правила главнее модели.
   analysis.blockers = reconcileBlockers(analysis.blockers, demand, profile, ctx.cfg.thresholds);
   analysis.score = computeScore(analysis.expectations);
@@ -195,15 +230,31 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+/**
+ * Текст вакансии по ссылке — одна страница по явному действию пользователя.
+ * Для LinkedIn берётся гостевая страница /jobs/view/<id>/ и из неё — только
+ * блок описания: остальное там навигация и «похожие вакансии», которые
+ * разбор принял бы за требования.
+ */
 export async function fetchJobPage(url: string): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
+  const liId = linkedinJobId(url);
+  const target = liId ? canonicalLinkedInJobUrl(liId) : url;
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: ctrl.signal });
-    if ([401, 403, 429].includes(res.status)) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
+    const res = await fetch(target, {
+      headers: { 'User-Agent': UA, 'Accept-Language': 'en' }, redirect: 'follow', signal: ctrl.signal,
+    });
+    if ([401, 403, 429, 999].includes(res.status)) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
     if (!res.ok) throw new ApiError('jd_fetch_failed', 'The page did not open. Paste the job posting text.', 422);
     const raw = (await res.text()).slice(0, 2 * 1024 * 1024);
-    const text = htmlToText(raw);
+    if (liId || isLinkedInUrl(url)) {
+      const job = extractLinkedInJob(raw);
+      if (!job) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
+      return [job.title, [job.company, job.location].filter(Boolean).join(' · '), '', job.description]
+        .filter((x, i) => x || i === 2).join('\n').trim();
+    }
+    const text = cleanJobText(htmlToText(raw));
     if (text.length < 400) throw new ApiError('jd_fetch_blocked', blockedMessage(), 422);
     return text;
   } catch (e) {
@@ -234,7 +285,8 @@ export function demandFromIngest(raw: Record<string, unknown>, country: string):
   };
 }
 
-export async function runIngest(ctx: Ctx, text: string) {
+export async function runIngest(ctx: Ctx, rawText: string) {
+  const text = cleanJobText(rawText);
   const { data, model } = await callModel<Record<string, unknown>>(ctx.env, ctx.cfg, ctx.userId, {
     operation: 'ingest',
     prefix: 'You extract the structure of a job posting from text. An empty string instead of a guess.',
@@ -277,9 +329,34 @@ function documentLanguage(_opp: Opportunity): string {
   return 'en';
 }
 
+/** Переписывание по замечаниям проверяющего: прошлый черновик и что в нём не так. */
+export interface Revision { previous: string; comments: string[] }
+
+function revisionBlock(rev?: Revision): string {
+  if (!rev) return '';
+  return [
+    '', '=== REVISION ===',
+    'Your previous draft is below, followed by the reviewer\'s comments and the automated checks.',
+    'Rewrite the WHOLE document, fixing EVERY comment. Do not add facts or numbers that are not in the fact bank.',
+    'Keep what was not criticised. Do not mention the review in the document.',
+    '--- previous draft ---', rev.previous, '--- comments ---',
+    ...rev.comments.map((c, i) => `${i + 1}. ${c}`),
+  ].join('\n');
+}
+
+/** Формулировки, принятые пользователем для этого места, — писателю как обязательные. */
+function acceptedWording(analysis: Analysis): string {
+  const lines = analysis.expectations
+    .filter(e => e.fix?.status === 'applied' || e.fix?.status === 'answered')
+    .map(e => `- ${e.expectation}: ${e.evidence}`);
+  return lines.length
+    ? '\nThe candidate approved these wordings for this employer — use them (same facts, these words):\n' + lines.join('\n')
+    : '';
+}
+
 export async function runResume(
   ctx: Ctx, profile: Profile, facts: Fact[], opp: Opportunity, analysis: Analysis,
-  opts: { format_variant?: FormatVariant; pages?: 1 | 2 } = {},
+  opts: { format_variant?: FormatVariant; pages?: 1 | 2 } = {}, rev?: Revision,
 ) {
   const variant = opts.format_variant ?? formatForCountry(opp.country);
   const pages = opts.pages ?? ((profile.years_exp ?? 0) >= ctx.cfg.thresholds.twoPageYears ? 2 : 1);
@@ -291,10 +368,12 @@ export async function runResume(
     prefix: stablePrefix(profile, facts),
     instruction: fillPrompt(getPrompt(ctx.prompts, 'resume'), {
       OPPORTUNITY: [opp.company, opp.role_title, where].filter(Boolean).join(' · '),
-      EXPECTATIONS: analysis.expectations
-        .map(e => '[' + e.weight + '] ' + e.expectation + ' -> ' + e.evidence).join('\n'),
+      EXPECTATIONS: (analysis.expectations.length
+        ? analysis.expectations.map(e => '[' + e.weight + '] ' + e.expectation + ' -> ' + e.evidence).join('\n')
+        : 'General resume for the target roles: lead with the strongest confirmed facts with numbers.')
+        + acceptedWording(analysis),
       FORMAT: formatRules(variant), PAGES: pages, LANG: lang,
-    }),
+    }) + revisionBlock(rev),
     schema: RESUME_SCHEMA, temperature: 0.2, maxOutputTokens: 5000,
   });
 
@@ -305,7 +384,7 @@ export async function runResume(
 
 export async function runLetter(
   ctx: Ctx, profile: Profile, facts: Fact[], opp: Opportunity, analysis: Analysis,
-  opts: { tone?: 'neutral' | 'direct' | 'warm' } = {},
+  opts: { tone?: 'neutral' | 'direct' | 'warm' } = {}, rev?: Revision,
 ) {
   const isVacancy = opp.kind === 'vacancy';
   const range = isVacancy ? ctx.cfg.thresholds.letterVacancy : ctx.cfg.thresholds.letterHypothesis;
@@ -332,14 +411,14 @@ export async function runLetter(
         opp.jd_text ? 'From the posting: ' + opp.jd_text.slice(0, 4000) : '',
       ].filter(Boolean).join('\n'),
       EXPECTATIONS: analysis.expectations.filter(e => e.weight === 'must')
-        .map(e => e.expectation + ' -> ' + e.evidence).join('\n'),
+        .map(e => e.expectation + ' -> ' + e.evidence).join('\n') + acceptedWording(analysis),
       BRIDGE: softest ? softest.bridge + ': ' + softest.gap_answer : 'no soft gaps; write a paragraph about scale or trajectory',
       OBJECTION: analysis.objection ? analysis.objection.risk + ' -> ' + analysis.objection.answer : '',
       CHANNEL: channelLine,
       TONE: opts.tone ?? 'neutral',
       WORDS: range[0] + '-' + range[1],
       LANG: lang,
-    }),
+    }) + revisionBlock(rev),
     schema: LETTER_SCHEMA, temperature: 0.4, maxOutputTokens: 1600,
   });
 
@@ -377,12 +456,15 @@ export function discoverAngles(ctx: Ctx, profile: Profile): string[] {
 }
 
 /**
- * Два прохода на направление. В одном общем веб-поиске новости о раундах и
+ * Три прохода на направление. В одном общем веб-поиске новости о раундах и
  * реорганизациях забивали выдачу, и находились одни гипотезы. Теперь:
- *   vacancies — веб-поиск только по сайтам вакансий и ATS (cfg.jobDomains);
+ *   linkedin  — веб-поиск только по linkedin.com, ссылки /jobs/view/<id>;
+ *   vacancies — сайты вакансий и ATS (cfg.jobDomains без LinkedIn);
  *   signals   — прежний поиск гипотез по датированным сигналам.
+ * LinkedIn отделён, потому что в общем списке из 60 доменов он забирал почти
+ * всю выдачу страницами поиска и компаний, а не самими вакансиями.
  */
-export const DISCOVER_PASSES = ['vacancies', 'signals'] as const;
+export const DISCOVER_PASSES = ['linkedin', 'vacancies', 'signals'] as const;
 export type DiscoverPass = typeof DISCOVER_PASSES[number];
 
 /**
@@ -393,7 +475,17 @@ export type DiscoverPass = typeof DISCOVER_PASSES[number];
 export type SearchMode = 'all' | 'vacancies';
 
 export function passesFor(mode: SearchMode): readonly DiscoverPass[] {
-  return mode === 'vacancies' ? ['vacancies'] : DISCOVER_PASSES;
+  return mode === 'vacancies' ? ['linkedin', 'vacancies'] : DISCOVER_PASSES;
+}
+
+const PASS_PROMPT: Record<DiscoverPass, string> = {
+  linkedin: 'discover_linkedin', vacancies: 'discover_vacancies', signals: 'discover',
+};
+
+function passDomains(ctx: Ctx, pass: DiscoverPass): string[] | undefined {
+  if (pass === 'linkedin') return ['linkedin.com'];
+  if (pass === 'vacancies') return ctx.cfg.jobDomains.filter(d => !/(^|\.)linkedin\.com$/.test(d));
+  return undefined;
 }
 
 export async function runDiscover(
@@ -413,17 +505,18 @@ export async function runDiscover(
     try {
       const tokens = {
         PERIMETER: angle, GEO: profile.geo, EXCLUDE: profile.exclude,
+        TITLES: describeTitleVariants(titleVariants(angle, profile.geo)),
         KNOWN: known.join(', '), BREADTH: profile.breadth, COUNT: perAngle, TODAY: today,
       };
       const { data, trace } = await callModel<{ items: unknown[] }>(ctx.env, ctx.cfg, ctx.userId, {
         operation: 'discover',
         prefix: 'The candidate is looking for a job. Profile: ' + profile.resume_text.slice(0, 6000),
-        instruction: fillPrompt(getPrompt(ctx.prompts, pass === 'vacancies' ? 'discover_vacancies' : 'discover'), tokens),
+        instruction: fillPrompt(getPrompt(ctx.prompts, PASS_PROMPT[pass]), tokens),
         // Рассуждение и разбор найденного у рассуждающей модели съедают лимит
         // ответа: при 4000 JSON обрезался, и прогон находил ноль. Платится
         // только использованное, так что запас ничего не стоит.
         schema: DISCOVER_SCHEMA, temperature: 0.5, maxOutputTokens: 16000, webSearch: true,
-        searchDomains: pass === 'vacancies' ? ctx.cfg.jobDomains : undefined,
+        searchDomains: passDomains(ctx, pass),
       });
       const raw = data.items ?? [];
       const kept = (raw.map(sanitizeDiscoverItem).filter(Boolean) as DiscoverItem[])
@@ -448,3 +541,6 @@ export async function runDiscover(
   });
   return { items: batches.flat(), outcomes };
 }
+
+/** Тот же стабильный префикс — для проверяющего и коуча: кэш входа общий. */
+export const stableContext = stablePrefix;
